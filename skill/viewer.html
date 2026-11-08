@@ -104,8 +104,8 @@
          border-radius: 6px; padding: 1px 8px; margin: 20px 0 4px; }
   #card h2 + .src, .state + .src { margin-top: 0; }
   .src.推断 { color: var(--warn); border-color: var(--warn); }
-  .src[data-page] { cursor: pointer; }
-  .src[data-page]:hover { color: var(--accent); border-color: var(--accent); }
+  a.pg { color: inherit; text-decoration: none; border-bottom: 1px dotted currentColor; cursor: pointer; }
+  a.pg:hover { color: var(--accent); }
   .m { font-family: "Cambria Math", Cambria, "Times New Roman", serif; font-size: 1.06em; white-space: nowrap; }
   .eq { margin: 10px 0; padding: 8px 14px; background: var(--bg); border-radius: 8px; text-align: center;
         font-family: "Cambria Math", Cambria, "Times New Roman", serif; font-size: 15.5px; overflow-x: auto; }
@@ -162,7 +162,12 @@ function tex(s) {
 }
 function esc(s) { return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
 function short(n) { return n.label.split('：')[0]; }
-// 处理顺序：转义 → 代码、公式先暂存 → [文字](#节点id) 卡片链接 → [文字](网址) → **加粗** → *斜体*
+// 页码 p.994 做成可点的链接，交给扩展打开 PDF；只在 VSCode 预览且元信息写了 pdf 时生效
+function pages(s) {
+  if (!vscodeApi || !T.pdf) return s;
+  return s.replace(/p\.(\d+)/g, '<a class="pg" data-page="$1" title="打开原文第 $1 页">p.$1</a>');
+}
+// 处理顺序：转义 → 代码、公式先暂存 → [文字](#节点id) 卡片链接 → [文字](网址) → **加粗** → *斜体* → 方括号出处里的页码
 function inline(s, linked) {
   var keep = [];
   function stash(h) { keep.push(h); return '\u0000' + (keep.length - 1) + '\u0000'; }
@@ -176,7 +181,8 @@ function inline(s, linked) {
     })
     .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, '<a href="$2" target="_blank">$1</a>')
     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\*([^*\s][^*]*?)\*/g, '<em>$1</em>');
+    .replace(/\*([^*\s][^*]*?)\*/g, '<em>$1</em>')
+    .replace(/\[[^\[\]]*p\.\d[^\[\]]*\]/g, pages);                     // 如 [§4b p.998；Fig. 8]
   return s.replace(/\u0000(\d+)\u0000/g, function (_, i) { return keep[i]; });
 }
 
@@ -196,9 +202,9 @@ function md(text, linked) {
       var h = 'h' + m[1].length; out.push('<' + h + '>' + il(m[2]) + '</' + h + '>'); i++;
     } else if (/^---+$/.test(t)) { out.push('<hr>'); i++; }            // 分隔线
     else if ((m = t.match(/^【(原文|背景|推断)(?:\s*·\s*(.+))?】$/))) {   // 来源标签
-      var pg = vscodeApi && T.pdf && m[1] === '原文' && (m[2] || '').match(/p\.(\d+)/);
-      out.push('<div class="src ' + m[1] + '"' + (pg ? ' data-page="' + pg[1] + '" title="打开原文第 ' + pg[1] + ' 页"' : '') + '>' +
-               m[1] + (m[2] ? ' · ' + il(m[2]) : '') + '</div>'); i++;
+      var where = m[2] ? il(m[2]) : '';
+      if (m[1] === '原文') where = pages(where);                       // 标签里每个页码各自可点
+      out.push('<div class="src ' + m[1] + '">' + m[1] + (where ? ' · ' + where : '') + '</div>'); i++;
     } else if ((m = t.match(/^\$\$(.+)\$\$$/))) {                       // 单独成行的公式
       out.push('<div class="eq">' + tex(esc(m[1].trim())) + '</div>'); i++;
     } else if (t[0] === '|') {                                         // 表格
@@ -343,8 +349,8 @@ function open(n, keepScroll) {
 document.getElementById('panel').addEventListener('click', function (e) {   // 卡片里的链接、路径都能跳转
   var a = e.target.closest('[data-id]');
   if (a && byId[a.dataset.id]) open(byId[a.dataset.id]);
-  var src = e.target.closest('[data-page]');
-  if (src && !e.target.closest('[data-id]')) vscodeApi.postMessage({ page: +src.dataset.page });   // 交给扩展打开 PDF
+  var pg = e.target.closest('[data-page]');
+  if (pg) vscodeApi.postMessage({ page: +pg.dataset.page });   // 交给扩展打开 PDF
 });
 function close() {
   document.body.classList.remove('panel-open');

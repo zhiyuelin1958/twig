@@ -18,8 +18,10 @@ function parse(text) {
     text = text.slice(end + 4);
   }
   const nodes = [];
+  tree.bad = [];                                       // 以 ## 开头却不是合法节点标题的行
   for (const line of text.split('\n')) {
     const m = line.match(NODE);
+    if (!m && line.startsWith('## ')) tree.bad.push(line.trim());
     if (m) {
       const node = { id: m[2], label: m[1], body: [] };
       for (const [, key, value] of m[3].matchAll(/(\w+)=([\w-]+)/g)) node[key] = value;
@@ -33,10 +35,12 @@ function parse(text) {
   return tree;
 }
 
-// 找出写错的父节点和卡片链接
+// 找出写错的节点标题、父节点、卡片链接和元信息 current
 function check(tree) {
   const ids = new Set(tree.nodes.map(n => n.id));
   const problems = [];
+  for (const line of tree.bad) problems.push(`“${line}”不是合法的节点标题（id 只能用英文字母、数字、_、-；卡片里的小标题用 ###）`);
+  if (tree.current && !ids.has(tree.current)) problems.push(`元信息 current 指向不存在的节点 ${tree.current}`);
   for (const n of tree.nodes) {
     if (n.parent && !ids.has(n.parent)) problems.push(`节点 ${n.id} 的父节点 ${n.parent} 不存在`);
     for (const [, target] of n.body.matchAll(/\]\(#([\w-]+)\)/g)) {
