@@ -1,0 +1,89 @@
+{
+  "name": "twig",
+  "displayName": "Twig — Paper Reading Tree",
+  "description": "读论文时把主线与追问画成树状图，点节点看知识卡片，点出处跳到原文对应页；可选为 Claude Code、Codex、Gemini、Copilot 安装配套的书写规则。",
+  "publisher": "linyuze",
+  "version": "0.2.0",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Visualization",
+    "Other"
+  ],
+  "main": "./extension.js",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "twig.preview",
+        "title": "打开预览",
+        "category": "Twig",
+        "icon": "$(type-hierarchy)"
+      },
+      {
+        "command": "twig.exportHtml",
+        "title": "导出 HTML",
+        "category": "Twig"
+      },
+      {
+        "command": "twig.newTree",
+        "title": "新建 Twig",
+        "category": "Twig"
+      },
+      {
+        "command": "twig.installSkill",
+        "title": "重新安装 AI 书写规则",
+        "category": "Twig"
+      }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "twig.preview",
+          "when": "resourceFilename =~ /_twig\\.md$/",
+          "group": "navigation"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "twig.preview",
+          "when": "resourceFilename =~ /_twig\\.md$/",
+          "group": "navigation"
+        },
+        {
+          "command": "twig.exportHtml",
+          "when": "resourceFilename =~ /_twig\\.md$/",
+          "group": "navigation"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Twig",
+      "properties": {
+        "twig.installSkill": {
+          "type": "boolean",
+          "default": false,
+          "description": "把书写规则装成 skill twig，供本机已装的 Claude Code、Codex、Gemini 和 Copilot 使用（会写入家目录下的 .claude/skills 等文件夹）。第一次启动时会询问。"
+        }
+      }
+    }
+  },
+  "icon": "icon.png",
+  "keywords": [
+    "论文",
+    "阅读",
+    "知识卡片",
+    "reading",
+    "paper",
+    "mind map",
+    "claude"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/zhiyuelin1958/twig"
+  }
+}

@@ -1,0 +1,406 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Twig</title>
+<style>
+  :root {
+    --bg: #f2f6fc;          /* 背景：浅蓝 */
+    --surface: #ffffff;     /* 卡片面板：白 */
+    --box: #d6e2f4;         /* 方框：蓝 */
+    --border: #dbe3ef;      /* 分隔线 */
+    --box-border: #9fb4d6;  /* 方框边框 */
+    --line: #aebcd3;        /* 连线 */
+    --box-hover: #5b7db3;   /* 悬停边框 */
+    --faint: #8b8d98;
+    --trunk-bar: #3f64a3;   /* 主干竖条 */
+    --muted: #5a6272;       /* 次要文字 */
+    --text: #1c2024;        /* 主文字 */
+    --accent: #2f5aa8;      /* 当前节点、链接：深蓝 */
+    --warn: #c2683a;        /* “推断”标签：橙 */
+    --extra-box: #ece3cf;   /* 超出本文的方框：米黄 */
+    --extra-border: #c4ad80;
+    --panel-w: clamp(460px, 44vw, 760px);
+  }
+  * { box-sizing: border-box; scrollbar-width: none; }   /* 隐藏滚动条，仍可滚动 */
+  ::-webkit-scrollbar { display: none; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+    font: 14px/1.6 -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; }
+  header { padding: 22px 32px 6px; }
+  h1 { margin: 0; font-size: 17px; font-weight: 600; letter-spacing: .2px; }
+  .meta { margin-top: 4px; color: var(--muted); font-size: 12.5px; }
+  .meta b { color: var(--text); font-weight: 500; }
+  .meta .sep { margin: 0 10px; color: var(--faint); }
+
+  body { display: flex; flex-direction: column; }
+  main { flex: 1; min-height: 0; padding: 20px 32px 48px; overflow: auto; transition: margin-right .22s ease; }
+  body.panel-open main { margin-right: var(--panel-w); }
+  #stage { position: relative; overflow: hidden; }
+  #canvas { position: relative; transform-origin: 0 0; }
+
+  /* 缩放按钮：卡片打开时隐藏 */
+  .zoom { position: fixed; right: 20px; bottom: 20px; display: flex; align-items: center;
+          background: var(--surface); border: 1px solid var(--box-border); border-radius: 10px; overflow: hidden; }
+  .zoom button { border: 0; background: none; color: var(--muted); font-size: 15px; width: 32px; height: 30px; cursor: pointer; }
+  .zoom button:hover { background: var(--bg); color: var(--text); }
+  .zoom button + button { border-left: 1px solid var(--border); }
+  main.dragging { cursor: grabbing; user-select: none; }
+  body.panel-open .zoom { display: none; }
+  #lines { position: absolute; left: 0; top: 0; overflow: visible; }
+
+  .node {
+    position: absolute; display: flex; align-items: center;
+    padding: 6px 14px; background: var(--box); border: 1px solid var(--box-border); border-radius: 12px;
+    font-size: 13px; line-height: 1.45; cursor: pointer; overflow: hidden;
+    transition: border-color .15s;
+  }
+  .node > span { min-width: 0; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .node:hover { border-color: var(--box-hover); }
+  .node.trunk { box-shadow: inset 3px 0 0 var(--trunk-bar); padding-left: 17px; }
+  .node.pending { border-style: dashed; color: var(--muted); }
+  .node.extra { background: var(--extra-box); border-color: var(--extra-border); }
+  .node.current { border-color: var(--accent); }
+  .node.selected { outline: 1.5px solid var(--muted); outline-offset: 2px; }
+
+  #panel {
+    position: fixed; top: 0; right: 0; bottom: 0; width: min(var(--panel-w), 100%);
+    background: var(--surface); border-left: 1px solid var(--border);
+    display: flex; flex-direction: column;
+    transform: translateX(100%); transition: transform .22s ease;
+  }
+  body.panel-open #panel { transform: none; }
+  .bar { display: flex; align-items: center; gap: 12px; padding: 12px 16px 12px 24px;
+         border-bottom: 1px solid var(--border); }
+  .crumb { flex: 1; color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .crumb a { color: var(--muted); cursor: pointer; }
+  .crumb a:hover { color: var(--accent); }
+  .crumb .sep { margin: 0 6px; color: var(--faint); }
+  #close { border: 0; background: none; color: var(--muted); font-size: 18px; line-height: 1;
+           width: 28px; height: 28px; border-radius: 8px; cursor: pointer; }
+  #close:hover { background: var(--border); color: var(--text); }
+
+  /* 知识卡片排版 */
+  #card { padding: 20px 28px 40px; overflow-y: auto; line-height: 1.75; }
+  #card h2 { font-size: 17px; font-weight: 600; margin: 0 0 14px; line-height: 1.5; }
+  #card h3 { font-size: 15px; font-weight: 600; margin: 26px 0 8px; padding-bottom: 4px; border-bottom: 1px solid var(--border); }
+  #card h4 { font-size: 14px; font-weight: 600; margin: 18px 0 6px; }
+  #card p { margin: 6px 0; }
+  #card ul, #card ol { margin: 6px 0; padding-left: 22px; }
+  #card li { margin: 3px 0; }
+  #card li > ul, #card li > ol { margin: 2px 0; }
+  #card strong { font-weight: 600; }
+  #card hr { border: 0; border-top: 1px solid var(--border); margin: 20px 0; }
+  #card code { font-family: Consolas, monospace; font-size: 12.5px; background: var(--bg); padding: 1px 5px; border-radius: 4px; }
+  #card blockquote { margin: 10px 0; padding: 6px 14px; border-left: 3px solid var(--box-border);
+                     background: var(--bg); color: var(--muted); border-radius: 0 8px 8px 0; }
+  .table { overflow-x: auto; margin: 10px 0; }
+  #card table { border-collapse: collapse; font-size: 13px; line-height: 1.6; min-width: 100%; }
+  #card th { background: var(--bg); font-weight: 600; text-align: left; }
+  #card th, #card td { padding: 6px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  .state { display: inline-block; font-size: 12px; color: var(--muted); border: 1px dashed var(--line);
+           border-radius: 6px; padding: 0 8px; margin: -4px 0 12px; }
+  .src { display: table; font-size: 12px; line-height: 1.6; color: var(--muted); border: 1px solid var(--line);
+         border-radius: 6px; padding: 1px 8px; margin: 20px 0 4px; }
+  #card h2 + .src, .state + .src { margin-top: 0; }
+  .src.推断 { color: var(--warn); border-color: var(--warn); }
+  .src[data-page] { cursor: pointer; }
+  .src[data-page]:hover { color: var(--accent); border-color: var(--accent); }
+  .m { font-family: "Cambria Math", Cambria, "Times New Roman", serif; font-size: 1.06em; white-space: nowrap; }
+  .eq { margin: 10px 0; padding: 8px 14px; background: var(--bg); border-radius: 8px; text-align: center;
+        font-family: "Cambria Math", Cambria, "Times New Roman", serif; font-size: 15.5px; overflow-x: auto; }
+  sub, sup { line-height: 0; font-size: 75%; }
+  a.link { color: var(--accent); text-decoration: none; border-bottom: 1px solid var(--box-border); cursor: pointer; }
+  a.link:hover { border-bottom-color: var(--accent); }
+  #card a[target] { color: var(--accent); }
+  .kids { margin-top: 28px; padding-top: 14px; border-top: 1px solid var(--border); font-size: 13px; }
+  .kids h5 { margin: 0 0 6px; font-size: 12px; font-weight: 500; color: var(--muted); }
+  .kids div { margin: 4px 0; }
+</style>
+</head>
+<body>
+<header>
+  <h1 id="title"></h1>
+  <div class="meta" id="meta"></div>
+</header>
+<main><div id="stage"><div id="canvas"><svg id="lines"></svg></div></div></main>
+<div class="zoom">
+  <button id="zoomOut" title="缩小">−</button><button id="zoomIn" title="放大">+</button>
+</div>
+<aside id="panel">
+  <div class="bar"><div class="crumb" id="crumb"></div><button id="close" aria-label="关闭">×</button></div>
+  <div id="card"></div>
+</aside>
+
+<!-- build.cjs 把 Twig 文件 解析后的数据填在这里 -->
+<script id="data" type="application/json">__DATA__</script>
+
+<script>
+var BW = 220, BH = 54, GX = 60, GY = 14, RH = BH + GY;   // 方框宽、高，列间距、行间距
+var T, byId, kids, trunk, elById, openId = null;
+
+/* ---------- 行内格式 ---------- */
+
+var SYM = {
+  alpha: 'α', beta: 'β', gamma: 'γ', Gamma: 'Γ', delta: 'δ', Delta: 'Δ', epsilon: 'ε', varepsilon: 'ε',
+  zeta: 'ζ', eta: 'η', theta: 'θ', kappa: 'κ', lambda: 'λ', Lambda: 'Λ', mu: 'μ', nu: 'ν', xi: 'ξ',
+  pi: 'π', rho: 'ρ', sigma: 'σ', Sigma: 'Σ', tau: 'τ', phi: 'φ', varphi: 'φ', Phi: 'Φ', chi: 'χ',
+  psi: 'ψ', omega: 'ω', Omega: 'Ω',
+  times: '×', cdot: '·', pm: '±', propto: '∝', approx: '≈', sim: '∼', le: '≤', leq: '≤', ge: '≥',
+  geq: '≥', ne: '≠', neq: '≠', ll: '≪', gg: '≫', infty: '∞', int: '∫', sum: '∑', prod: '∏',
+  partial: '∂', nabla: '∇', to: '→', rightarrow: '→', Rightarrow: '⇒', leftarrow: '←',
+  ldots: '…', cdots: '⋯', circ: '°', prime: '′', in: '∈', quad: '　'
+};
+// 把简单 LaTeX 换成 Unicode：$N_{0r}$ → N<sub>0r</sub>
+function tex(s) {
+  s = s.replace(/\\(?:mathrm|text|rm|mathit|operatorname|mathbf)\s*/g, '')
+       .replace(/\\[,;:! ]/g, ' ')
+       .replace(/\\([A-Za-z]+) ?/g, function (_, w) { return SYM[w] || w; })
+       .replace(/-/g, '−');
+  function f(_, k, c) { return k === '_' ? '<sub>' + c + '</sub>' : '<sup>' + c + '</sup>'; }
+  return s.replace(/([_^])\{([^{}]*)\}/g, f).replace(/([_^])([^\s{}<])/g, f).replace(/[{}]/g, '');
+}
+function esc(s) { return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+function short(n) { return n.label.split('：')[0]; }
+// 处理顺序：转义 → 代码、公式先暂存 → [文字](#节点id) 卡片链接 → [文字](网址) → **加粗** → *斜体*
+function inline(s, linked) {
+  var keep = [];
+  function stash(h) { keep.push(h); return '\u0000' + (keep.length - 1) + '\u0000'; }
+  s = esc(s)
+    .replace(/`([^`]+)`/g, function (_, c) { return stash('<code>' + c + '</code>'); })
+    .replace(/\$([^$]+)\$/g, function (_, c) { return stash('<span class="m">' + tex(c) + '</span>'); })
+    .replace(/\[([^\]]+)\]\(#([\w-]+)\)/g, function (_, text, id) {
+      if (!byId[id] || !linked) return text;
+      linked[id] = true;
+      return '<a class="link" data-id="' + id + '">' + text + '</a>';
+    })
+    .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, '<a href="$2" target="_blank">$1</a>')
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*([^*\s][^*]*?)\*/g, '<em>$1</em>');
+  return s.replace(/\u0000(\d+)\u0000/g, function (_, i) { return keep[i]; });
+}
+
+// VSCode 预览中可与扩展通信；导出的独立网页里为 null
+var vscodeApi = typeof acquireVsCodeApi === 'function' ? acquireVsCodeApi() : null;
+
+/* ---------- 块级排版（Markdown 子集） ---------- */
+
+var BLOCK_START = /^(#{3,4}\s|>|\||\$\$|---+$|【|[-*]\s|\d+[.、]\s)/;
+function md(text, linked) {
+  var lines = text.split('\n'), out = [], i = 0, m;
+  function il(s) { return inline(s, linked); }
+  while (i < lines.length) {
+    var t = lines[i].trim();
+    if (!t) { i++; continue; }
+    if ((m = t.match(/^(#{3,4})\s+(.*)$/))) {                          // 小标题
+      var h = 'h' + m[1].length; out.push('<' + h + '>' + il(m[2]) + '</' + h + '>'); i++;
+    } else if (/^---+$/.test(t)) { out.push('<hr>'); i++; }            // 分隔线
+    else if ((m = t.match(/^【(原文|背景|推断)(?:\s*·\s*(.+))?】$/))) {   // 来源标签
+      var pg = vscodeApi && T.pdf && m[1] === '原文' && (m[2] || '').match(/p\.(\d+)/);
+      out.push('<div class="src ' + m[1] + '"' + (pg ? ' data-page="' + pg[1] + '" title="打开原文第 ' + pg[1] + ' 页"' : '') + '>' +
+               m[1] + (m[2] ? ' · ' + il(m[2]) : '') + '</div>'); i++;
+    } else if ((m = t.match(/^\$\$(.+)\$\$$/))) {                       // 单独成行的公式
+      out.push('<div class="eq">' + tex(esc(m[1].trim())) + '</div>'); i++;
+    } else if (t[0] === '|') {                                         // 表格
+      var rows = [];
+      while (i < lines.length && lines[i].trim()[0] === '|') { rows.push(lines[i].trim()); i++; }
+      out.push(table(rows, il));
+    } else if (t[0] === '>') {                                         // 引用框
+      var q = [];
+      while (i < lines.length && lines[i].trim()[0] === '>') { q.push(il(lines[i].trim().replace(/^>\s?/, ''))); i++; }
+      out.push('<blockquote>' + q.join('<br>') + '</blockquote>');
+    } else if (/^([-*]|\d+[.、])\s+/.test(t)) {                        // 列表（可缩进一层）
+      var items = [];
+      while (i < lines.length && (m = lines[i].match(/^(\s*)([-*]|\d+[.、])\s+(.*)$/))) {
+        items.push({ d: m[1].length >= 2 ? 1 : 0, o: /\d/.test(m[2]), t: m[3] }); i++;
+      }
+      out.push(list(items, il));
+    } else {                                                           // 段落：段内换行照原样
+      var p = [];
+      while (i < lines.length && lines[i].trim() && (!p.length || !BLOCK_START.test(lines[i].trim()))) {
+        p.push(il(lines[i].trim())); i++;
+      }
+      out.push('<p>' + p.join('<br>') + '</p>');
+    }
+  }
+  return out.join('');
+}
+function table(rows, il) {
+  function cells(r) { return r.replace(/^\||\|$/g, '').split('|').map(function (c) { return c.trim(); }); }
+  var head = cells(rows[0]), body = rows.slice(/^\|?[\s:|-]+\|?$/.test(rows[1] || '') ? 2 : 1);
+  return '<div class="table"><table><tr>' + head.map(function (c) { return '<th>' + il(c) + '</th>'; }).join('') + '</tr>' +
+    body.map(function (r) { return '<tr>' + cells(r).map(function (c) { return '<td>' + il(c) + '</td>'; }).join('') + '</tr>'; }).join('') +
+    '</table></div>';
+}
+function list(items, il) {
+  var i = 0;
+  function level(d) {
+    var tag = items[i].o ? 'ol' : 'ul', s = '';
+    while (i < items.length && items[i].d >= d) {
+      if (items[i].d > d) { s = s.replace(/<\/li>$/, '') + level(d + 1) + '</li>'; continue; }
+      s += '<li>' + il(items[i].t) + '</li>'; i++;
+    }
+    return '<' + tag + '>' + s + '</' + tag + '>';
+  }
+  return level(0);
+}
+
+/* ---------- 画树 ---------- */
+
+function render(data) {
+  T = data; byId = {}; kids = {}; trunk = []; elById = {};
+  T.nodes.forEach(function (n) { byId[n.id] = n; kids[n.id] = []; });
+  T.nodes.forEach(function (n) { n.parent && kids[n.parent] ? kids[n.parent].push(n) : trunk.push(n); });
+
+  // 布局：主干竖排在第 0 列，追问按层级向右排；每个节点与它的第一个子节点同一行
+  var maxDepth = 0;
+  function place(n, depth, row) {
+    n.depth = depth; n.x = depth * (BW + GX); n.y = row * RH;
+    maxDepth = Math.max(maxDepth, depth);
+    var used = 0;
+    kids[n.id].forEach(function (c) { used += place(c, depth + 1, row + used); });
+    return Math.max(1, used);
+  }
+  var row = 0;
+  trunk.forEach(function (t) { row += place(t, 0, row) + 0.4; });
+
+  var canvas = document.getElementById('canvas');
+  canvas.innerHTML = '<svg id="lines"></svg>';
+  var svg = document.getElementById('lines');
+  var W = (maxDepth + 1) * (BW + GX), H = row * RH;
+  canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
+  svg.setAttribute('width', W); svg.setAttribute('height', H);
+  treeW = W; treeH = H; applyScale();
+
+  var paths = [];
+  for (var k = 1; k < trunk.length; k++) {               // 主干竖线
+    paths.push('M' + (BW / 2) + ' ' + (trunk[k - 1].y + BH) + ' V' + trunk[k].y);
+  }
+  T.nodes.forEach(function (c) {                         // 追问横线（圆角折线）
+    if (!c.parent || !byId[c.parent]) return;
+    var p = byId[c.parent];
+    var x1 = p.x + BW, y1 = p.y + BH / 2, x2 = c.x, y2 = c.y + BH / 2, xm = x1 + GX / 2;
+    if (y1 === y2) { paths.push('M' + x1 + ' ' + y1 + ' H' + x2); return; }
+    var r = Math.min(10, (y2 - y1) / 2);
+    paths.push('M' + x1 + ' ' + y1 + ' H' + (xm - r) + ' Q' + xm + ' ' + y1 + ' ' + xm + ' ' + (y1 + r) +
+               ' V' + (y2 - r) + ' Q' + xm + ' ' + y2 + ' ' + (xm + r) + ' ' + y2 + ' H' + x2);
+  });
+  svg.innerHTML = paths.map(function (d) {
+    return '<path d="' + d + '" fill="none" stroke="var(--line)" stroke-width="1.5"/>';
+  }).join('');
+
+  T.nodes.forEach(function (n) {                         // 方框
+    var el = document.createElement('div');
+    el.className = 'node' + (n.parent ? '' : ' trunk') + (n.status === 'pending' ? ' pending' : '') + (n.status === 'extra' ? ' extra' : '') +
+                   (n.id === T.current ? ' current' : '');
+    el.style.cssText = 'left:' + n.x + 'px;top:' + n.y + 'px;width:' + BW + 'px;height:' + BH + 'px';
+    el.innerHTML = '<span>' + inline(n.label) + '</span>';
+    el.title = n.label.replace(/\$/g, '');
+    el.onclick = function (e) { e.stopPropagation(); open(n); };
+    canvas.appendChild(el);
+    elById[n.id] = el;
+  });
+
+  // 顶部信息
+  document.title = T.title || 'Twig';
+  document.getElementById('title').innerHTML = inline(T.title || 'Twig');
+  var meta = [];
+  if (T.progress) meta.push('读到 <b>' + inline(T.progress) + '</b>');
+  if (byId[T.current]) meta.push('当前 <b>' + chain(byId[T.current]).map(function (c) { return inline(short(c)); }).join(' › ') + '</b>');
+  document.getElementById('meta').innerHTML = meta.join('<span class="sep">·</span>');
+
+  // 重画后保持原来打开的卡片
+  if (openId && byId[openId]) open(byId[openId], true); else close();
+}
+function chain(n) { var p = []; while (n) { p.unshift(n); n = byId[n.parent]; } return p; }
+
+/* ---------- 知识卡片 ---------- */
+
+var card = document.getElementById('card'), crumb = document.getElementById('crumb'), sel = null;
+function open(n, keepScroll) {
+  var el = elById[n.id], top = card.scrollTop;
+  openId = n.id;
+  if (sel) sel.classList.remove('selected');
+  sel = el; el.classList.add('selected');
+  crumb.innerHTML = chain(n).map(function (c) {
+    return '<a data-id="' + c.id + '">' + inline(short(c)) + '</a>';
+  }).join('<span class="sep">›</span>');
+
+  var linked = {};
+  var html = '<h2>' + inline(n.label) + '</h2>' + ({ pending: '<div class="state">暂挂</div>', extra: '<div class="state">超出本文</div>' }[n.status] || '') +
+             md(n.body || '', linked);
+  var rest = kids[n.id].filter(function (c) { return !linked[c.id]; });   // 正文没引出的追问列在底部
+  if (rest.length) {
+    html += '<div class="kids"><h5>由此追问</h5>' + rest.map(function (c) {
+      return '<div><a class="link" data-id="' + c.id + '">' + inline(c.label) + '</a></div>';
+    }).join('') + '</div>';
+  }
+  card.innerHTML = html;
+  card.scrollTop = keepScroll ? top : 0;
+  document.body.classList.add('panel-open');
+  if (!keepScroll) setTimeout(function () { el.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' }); }, 240);
+}
+document.getElementById('panel').addEventListener('click', function (e) {   // 卡片里的链接、路径都能跳转
+  var a = e.target.closest('[data-id]');
+  if (a && byId[a.dataset.id]) open(byId[a.dataset.id]);
+  var src = e.target.closest('[data-page]');
+  if (src && !e.target.closest('[data-id]')) vscodeApi.postMessage({ page: +src.dataset.page });   // 交给扩展打开 PDF
+});
+function close() {
+  document.body.classList.remove('panel-open');
+  if (sel) sel.classList.remove('selected');
+  sel = null; openId = null;
+}
+document.getElementById('close').onclick = close;
+document.querySelector('main').onclick = function () { if (!(drag && drag.moved)) close(); };
+document.addEventListener('keydown', function (e) { if (e.key === 'Escape') close(); });
+
+/* ---------- 缩放：Ctrl + 滚轮（触控板双指捏合）或右下角按钮；卡片打开时不缩放 ---------- */
+
+var scale = 1, treeW = 0, treeH = 0, mainEl = document.querySelector('main');
+function applyScale() {
+  document.getElementById('canvas').style.transform = 'scale(' + scale + ')';
+  var stage = document.getElementById('stage');
+  stage.style.width = treeW * scale + 'px'; stage.style.height = treeH * scale + 'px';
+}
+// 以屏幕上 (cx, cy) 处为中心缩放，保持该点下的内容不动
+function zoomAt(next, cx, cy) {
+  var r = mainEl.getBoundingClientRect(), px = cx - r.left, py = cy - r.top;
+  var x = (mainEl.scrollLeft + px - 32) / scale, y = (mainEl.scrollTop + py - 20) / scale;   // 32、20 为 main 的内边距
+  scale = Math.min(2, Math.max(0.3, next));
+  applyScale();
+  mainEl.scrollLeft = x * scale + 32 - px;
+  mainEl.scrollTop = y * scale + 20 - py;
+}
+function zoomCenter(next) { var r = mainEl.getBoundingClientRect(); zoomAt(next, r.left + r.width / 2, r.top + r.height / 2); }
+mainEl.addEventListener('wheel', function (e) {
+  if (!e.ctrlKey || document.body.classList.contains('panel-open')) return;
+  e.preventDefault();
+  zoomAt(scale * Math.exp(-e.deltaY * 0.002), e.clientX, e.clientY);
+}, { passive: false });
+document.getElementById('zoomIn').onclick = function () { zoomCenter(scale * 1.2); };
+document.getElementById('zoomOut').onclick = function () { zoomCenter(scale / 1.2); };
+
+// 没有滚动条后，按住空白处拖动来平移视图；拖动过就不算“点空白关闭卡片”
+var drag = null;
+mainEl.addEventListener('mousedown', function (e) {
+  if (e.button !== 0 || e.target.closest('.node')) return;
+  drag = { x: e.clientX, y: e.clientY, left: mainEl.scrollLeft, top: mainEl.scrollTop, moved: false };
+});
+window.addEventListener('mousemove', function (e) {
+  if (!drag) return;
+  var dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+  if (Math.abs(dx) + Math.abs(dy) > 4) { drag.moved = true; mainEl.classList.add('dragging'); }
+  mainEl.scrollLeft = drag.left - dx; mainEl.scrollTop = drag.top - dy;
+});
+window.addEventListener('mouseup', function () {
+  mainEl.classList.remove('dragging');
+  if (drag && drag.moved) setTimeout(function () { drag = null; }, 0); else drag = null;
+});
+
+render(JSON.parse(document.getElementById('data').textContent));
+// VSCode 预览：源文件改动时扩展发来新数据，重画
+window.addEventListener('message', function (e) { if (e.data && e.data.nodes) render(e.data); });
+</script>
+</body>
+</html>
