@@ -1,6 +1,6 @@
 {
-  "name": "twig",
-  "displayName": "Twig — Paper Reading Tree",
+  "name": "twig-paper-reading",
+  "displayName": "Twig 问枝 — Paper Reading Tree",
   "description": "读论文时把主线与追问画成树状图，点节点看知识卡片，点出处跳到原文对应页；可选为 Claude Code、Codex、Gemini、Copilot 安装配套的书写规则。",
   "publisher": "linyuze",
   "version": "0.2.0",
