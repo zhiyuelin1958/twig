@@ -103,7 +103,7 @@ function fill(template, it, pdf, twigFile) {
     .replace(/^title: .*$/m, () => 'title: ' + label(it) + ' Twig')
     .replace(/^# .*$/m, () => '# ' + label(it) + ' Twig')
     .replace(/^> 论文：.*$/m, () => '> 论文：' + citation(it))
-    .replace(/^firstPage: .*$/m, () => 'firstPage: ' + firstPage(it));
+    .replace(/^firstPage:.*$/m, () => 'firstPage: ' + firstPage(it));
 }
 
 // 只填 pdf：从 PDF 新建时用，firstPage 清空，标题、引文由 AI 读 PDF 后填
@@ -112,7 +112,7 @@ function fillPdf(template, pdf, twigFile) {
   if (path.isAbsolute(rel)) rel = pdf;                                // 不在同一个盘时用绝对路径
   return template
     .replace(/^pdf: .*$/m, () => 'pdf: ' + rel.split(path.sep).join('/'))
-    .replace(/^firstPage: .*$/m, 'firstPage:');
+    .replace(/^firstPage:.*$/m, 'firstPage:');
 }
 
 module.exports = { search, recent, folders, folderPapers, folderPaths, dataDir, pdfs, label, fileName, fill, fillPdf };
