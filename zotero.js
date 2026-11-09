@@ -36,13 +36,13 @@ async function folders(parent) {
 
 // 直接放在某个文件夹里的论文，按标题排序
 async function folderPapers(key) {
-  return papers(await get('/collections/' + key + '/items/top?format=json&limit=100&sort=title'));
+  return papers(await get('/collections/' + key + '/items/top?format=json&sort=title'));
 }
 
 // 一篇文献所在的各个文件夹，每个写成从顶层往下的名称列表，如 [['大气科学文献1', '2026暑假']]
 async function folderPaths(it) {
   const all = {};
-  for (const c of await get('/collections?format=json&limit=100')) all[c.key] = { name: c.data.name, parent: c.data.parentCollection };
+  for (const c of await get('/collections?format=json')) all[c.key] = { name: c.data.name, parent: c.data.parentCollection };
   return (it.data.collections || []).filter(key => all[key]).map(key => {
     const names = [];
     for (let k = key; k && all[k]; k = all[k].parent) names.unshift(all[k].name);
@@ -97,15 +97,16 @@ function firstPage(it) {
 }
 
 // 把文献信息填进模板：标题、一级标题、引文、pdf（相对 Twig 文件的路径）、firstPage
+// 替换值写成函数：标题里的 $$、$& 等在字符串替换值中是特殊记号，会被改掉
 function fill(template, it, pdf, twigFile) {
   let rel = pdf ? path.relative(path.dirname(twigFile), pdf) : '';
   if (path.isAbsolute(rel)) rel = pdf;                                // 不在同一个盘时用绝对路径
   return template
-    .replace(/^title: .*$/m, 'title: ' + label(it) + ' Twig')
-    .replace(/^# .*$/m, '# ' + label(it) + ' Twig')
-    .replace(/^> 论文：.*$/m, '> 论文：' + citation(it))
-    .replace(/^pdf: .*$/m, 'pdf: ' + rel.split(path.sep).join('/'))
-    .replace(/^firstPage: .*$/m, 'firstPage: ' + firstPage(it));
+    .replace(/^title: .*$/m, () => 'title: ' + label(it) + ' Twig')
+    .replace(/^# .*$/m, () => '# ' + label(it) + ' Twig')
+    .replace(/^> 论文：.*$/m, () => '> 论文：' + citation(it))
+    .replace(/^pdf: .*$/m, () => 'pdf: ' + rel.split(path.sep).join('/'))
+    .replace(/^firstPage: .*$/m, () => 'firstPage: ' + firstPage(it));
 }
 
 module.exports = { search, recent, folders, folderPapers, folderPaths, dataDir, pdfs, label, fileName, fill };
