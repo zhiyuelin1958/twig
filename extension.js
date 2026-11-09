@@ -65,11 +65,8 @@ async function openPdf(uri, page, search) {
   }
   const doc = await vscode.workspace.openTextDocument(uri);
   const meta = tree.parse(doc.getText());
-  const file = path.resolve(path.dirname(uri.fsPath), meta.pdf);
-  if (!fs.existsSync(file)) {
-    vscode.window.showWarningMessage('找不到元信息 pdf 指向的文件：' + file);
-    return;
-  }
+  const file = await findPdf(meta, uri.fsPath);
+  if (!file) return;
   const pdfPage = page - (Number(meta.firstPage) || 1) + 1;
 
   // 同一篇 PDF 已打开时，PDF Viewer 不会按新页码跳转，所以先关掉旧标签页，在原位置重新打开
@@ -86,6 +83,27 @@ async function openPdf(uri, page, search) {
   if (search) fragment += '&search=' + encodeURIComponent(search) + '&phrase=true';
   const target = vscode.Uri.file(file).with({ fragment });
   await vscode.commands.executeCommand('vscode.openWith', target, 'pdf.view', column);
+}
+
+// 论文 PDF 的本机路径：先按元信息 pdf；那里没有文件（如在另一台电脑上建的，PDF 位置不同）时，按文献编号向当前文献库查
+// 文献库里有多个 PDF 时优先取与 pdf 同名的，否则让用户选；不改写 Twig 文件里的 pdf，免得多台电脑来回改。找不到时提示并返回空
+async function findPdf(meta, twigFile) {
+  const file = meta.pdf ? path.resolve(path.dirname(twigFile), meta.pdf) : '';
+  if (file && fs.existsSync(file)) return file;
+  const lib = currentLibrary();
+  const missing = file ? '找不到元信息 pdf 指向的文件：' + file : '元信息 pdf 没有填';
+  if (!meta[lib.field]) { vscode.window.showWarningMessage(missing); return ''; }
+  let list;
+  try {
+    list = (await lib.pdfs(meta[lib.field])).filter(p => fs.existsSync(p.file));
+  } catch (e) {
+    const h = e.reason && (lib.help[e.reason] || Object.values(lib.help)[0]);
+    vscode.window.showWarningMessage(missing + (h ? '。按文献编号查 ' + lib.name + ' 也没成功：' + h.label + '，' + h.detail : ''));
+    return '';
+  }
+  if (!list.length) { vscode.window.showWarningMessage(missing + '，' + lib.name + ' 里这篇文献也没有本机能打开的 PDF'); return ''; }
+  const same = file && list.find(p => path.basename(p.file).toLowerCase() === path.basename(file).toLowerCase());
+  return same ? same.file : (await choosePdfOf(list)) || '';
 }
 
 async function exportHtml(uri) {
