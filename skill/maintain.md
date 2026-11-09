@@ -1,6 +1,6 @@
 # 维护准则
 
-要修改 Twig 本身（规则、页面、代码、说明文档）时先读本文件。先分清身份：用户自称维护者，或在 Twig 源码仓库里工作时，按“维护者”一节；其余情况都按“用户”一节。
+要修改、更新 Twig 本身（规则、页面、代码、说明文档），或讨论它的新功能时先读本文件。先分清身份：用户自称维护者，或在 Twig 源码仓库里工作时，按“维护者”一节；其余情况都按“用户”一节。给出方案或交付改动前，逐条对照本文件自检，在回复里说明按哪个身份、对照了哪几条。
 
 ## 用户
 
@@ -19,6 +19,7 @@
 | `docs/workspace.md` | 用户 | 工作台搭建的完整说明：各种布局的做法和原因；README 只放结论并链接到这里 |
 | `SKILL.md` | AI | 何时触发、按什么顺序读哪些文件 |
 | `书写要求.md` | AI | 写 Twig 文件的全部规则 |
+| `reorganize.md` | AI | 整理一棵子树的流程；何时整理写在 `书写要求.md` |
 | `模板.md` | AI | 新 Twig 文件的骨架 |
 | `maintain.md` | AI | 本文件（维护准则） |
 
@@ -29,9 +30,9 @@
 
 | 文件 | 职责 |
 |---|---|
-| `skill/build.cjs` | 解析源文件（`parse`、`figurePages`）、检查格式（`check`）、生成页面（`toHtml`）；命令行和扩展共用 |
+| `skill/build.cjs` | 解析源文件（`parse`、`figurePages`、`refLinks`）、检查格式（`check`）、比对整理前后（`compare`）、生成页面（`toHtml`）；命令行和扩展共用 |
 | `skill/viewer.html` | 页面：样式和脚本，按注释标题分节（公式、跳转原文、行内格式、块级排版、画树、知识卡片、缩放）；KaTeX 版本在 `<head>` |
-| `extension.js` | 只放与 VSCode 交互的部分：命令、预览面板、新建时的搜索框、打开 PDF（`openPdf`）、按文献库分类整理文件夹（`syncFolders`）、安装 skill |
+| `extension.js` | 只放与 VSCode 交互的部分：命令、预览面板、新建时的搜索框、打开 PDF（`openPdf`）、在浏览器打开外部链接、按文献库分类整理文件夹（`syncFolders`）、安装 skill |
 | `library.js` | 文献库接口（各文献库模块导出哪些成员，写在文件开头）、按设置选文献库，以及与具体文献库无关的部分：引文格式、文件名、把引文、`pdf`、文献编号、`firstPage` 填进模板；不用 vscode 接口 |
 | `zotero.js` | Zotero 文献库：通过 Zotero 本地 API 列分类、搜索文献、取 PDF 路径和所在分类，推出数据目录和 Twig 文件对应的文献编号；不用 vscode 接口 |
 | `bibtex.js` | BibTeX 文献库：解析 `.bib` 文件的条目、JabRef 分组和 `file` 字段（兼容 JabRef 与 Zotero、Mendeley 等的导出写法）；只读，不改 `.bib`；不用 vscode 接口 |

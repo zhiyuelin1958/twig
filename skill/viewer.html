@@ -34,6 +34,8 @@
   .meta { margin-top: 4px; color: var(--muted); font-size: 12.5px; }
   .meta b { color: var(--text); font-weight: 500; }
   .meta .sep { margin: 0 10px; color: var(--faint); }
+  .meta .legend { display: inline-flex; align-items: center; gap: 5px; }
+  .meta .legend + .legend { margin-left: 12px; }
 
   body { display: flex; flex-direction: column; }
   main { flex: 1; min-height: 0; padding: 20px 32px 48px; overflow: auto; transition: margin-right .22s ease; }
@@ -111,6 +113,7 @@
          border-radius: 6px; padding: 1px 8px; margin: 20px 0 4px; }
   #card h2 + .src, .state + .src { margin-top: 0; }
   .src.推断 { color: var(--warn); border-color: var(--warn); }
+  .src.unread { border-style: dashed; color: var(--faint); }   /* 只核实了存在、未读原文的【论文】 */
   a.pg { color: inherit; text-decoration: none; border-bottom: 1px dotted currentColor; cursor: pointer; }
   a.pg:hover { color: var(--accent); }
   .m { font-family: "Cambria Math", Cambria, "Times New Roman", serif; font-size: 1.06em; white-space: nowrap; }
@@ -122,6 +125,7 @@
   sub, sup { line-height: 0; font-size: 75%; }
   a.link { color: var(--accent); text-decoration: none; border-bottom: 1px solid var(--box-border); cursor: pointer; }
   a.link:hover { border-bottom-color: var(--accent); }
+  a.ext { color: var(--accent); }
   #card a[target] { color: var(--accent); }
   .kids { margin-top: 28px; padding-top: 14px; border-top: 1px solid var(--border); font-size: 13px; }
   .kids h5 { margin: 0 0 6px; font-size: 12px; font-weight: 500; color: var(--muted); }
@@ -213,6 +217,19 @@ function figRef(all, kind, nums) {
   return all.slice(0, all.length - nums.length) +                      // 多个图表：每个编号各自可点
     nums.replace(/[A-Z]?\d+[a-z]?/g, function (num) { return link(num, num); });
 }
+// 【论文】标签：登记在元信息 refs 的名字做成外部链接；标签里的页码指那篇论文而不是本文，只显示，引文悬停可见
+function paperTag(where) {
+  var keep = [], s = esc(where);
+  Object.keys(T.refs || {}).sort(function (a, b) { return b.length - a.length; }).forEach(function (name) {
+    var url = T.refs[name];
+    keep.push('<a class="ext" href="' + attr(url) + '" target="_blank" title="在浏览器打开 ' + attr(url) + '">' + esc(name) + '</a>');
+    s = s.split(esc(name)).join('\u0000' + (keep.length - 1) + '\u0000');
+  });
+  s = s.replace(PAGE, function (all, p, range, quote) {
+    return quote ? '<span title="' + attr(quote) + '">p.' + p + (range || '') + '</span>' : all;
+  });
+  return s.replace(/\u0000(\d+)\u0000/g, function (_, i) { return keep[i]; });
+}
 // 只在 VSCode 预览且元信息写了 pdf 时做成链接；导出的网页只去掉引文，悬停可见
 function pages(s) {
   if (!vscodeApi || !T.pdf) {
@@ -241,7 +258,7 @@ function inline(s, linked) {
       linked[id] = true;
       return '<a class="link" data-id="' + id + '">' + text + '</a>';
     })
-    .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, '<a href="$2" target="_blank">$1</a>')
+    .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, '<a class="ext" href="$2" target="_blank">$1</a>')
     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
     .replace(/\*([^*\s][^*]*?)\*/g, '<em>$1</em>');
   s = pages(s);                                                        // 正文任何位置的页码与图表
@@ -250,6 +267,8 @@ function inline(s, linked) {
 
 /* ---------- 块级排版（Markdown 子集） ---------- */
 
+// 来源标签【原文 · …】【论文 · …】【教材 · …】【推断】；背景是旧写法，照常显示。【论文】的写法与 build.cjs 中的 paperNames 相同
+var SRC = /^【(原文|论文|教材|推断|背景)(?:\s*·\s*(.+))?】$/;
 var BLOCK_START = /^(#{3,4}\s|>|\||\$\$|---+$|【|[-*]\s|\d+[.、]\s)/;
 function md(text, linked) {
   var lines = text.split('\n'), out = [], i = 0, m;
@@ -260,9 +279,10 @@ function md(text, linked) {
     if ((m = t.match(/^(#{3,4})\s+(.*)$/))) {                          // 小标题
       var h = 'h' + m[1].length; out.push('<' + h + '>' + il(m[2]) + '</' + h + '>'); i++;
     } else if (/^---+$/.test(t)) { out.push('<hr>'); i++; }            // 分隔线
-    else if ((m = t.match(/^【(原文|背景|推断)(?:\s*·\s*(.+))?】$/))) {   // 来源标签
-      var where = m[2] ? il(m[2]) : '';                                // 标签里每个页码、图表各自可点
-      out.push('<div class="src ' + m[1] + '">' + m[1] + (where ? ' · ' + where : '') + '</div>'); i++;
+    else if ((m = t.match(SRC))) {                                     // 来源标签
+      var paper = m[1] === '论文', unread = paper && !/p\.\d/.test(m[2] || '');
+      var where = !m[2] ? '' : paper ? paperTag(m[2]) : il(m[2]);      // 原文标签里每个页码、图表各自可点
+      out.push('<div class="src ' + m[1] + (unread ? ' unread' : '') + '">' + m[1] + (where ? ' · ' + where : '') + '</div>'); i++;
     } else if (t.slice(0, 2) === '$$') {                               // 行间公式：$$…$$，可跨多行
       var src = [t.slice(2)];
       while (!/\$\$$/.test(src[src.length - 1]) && i + 1 < lines.length) src.push(lines[++i].trim());
@@ -313,6 +333,16 @@ function list(items, il) {
 
 /* ---------- 画树 ---------- */
 
+// 连线：实线箭头由先懂的指向后懂的。主干由上一节指向下一节；追问默认由子节点指向父节点（右边是左边的基础），
+// 节点标题写 rel=next 的反过来指向子节点（由父节点推出）；写 rel=assoc 的只是关联，画成虚线、不带箭头。rel 的取值与 build.cjs 中的 RELS 相同
+var ARROW_DEF = '<defs><marker id="arrow" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="8" markerHeight="8"' +
+                ' markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path d="M0 1 L10 5 L0 9 z" fill="var(--line)"/></marker></defs>';
+// at：箭头画在路径终点（end）还是起点（start，箭头反向）
+function edge(d, assoc, at) {
+  return '<path d="' + d + '" fill="none" stroke="var(--line)" stroke-width="1.5"' +
+    (assoc ? ' stroke-dasharray="4 4"' : ' marker-' + at + '="url(#arrow)"') + '/>';
+}
+
 function render(data) {
   T = data; byId = {}; kids = {}; trunk = []; elById = {};
   T.nodes.forEach(function (n) { byId[n.id] = n; kids[n.id] = []; });
@@ -339,25 +369,26 @@ function render(data) {
   treeW = W; treeH = H; applyScale();
 
   var paths = [];
-  for (var k = 1; k < trunk.length; k++) {               // 主干竖线
-    paths.push('M' + (BW / 2) + ' ' + (trunk[k - 1].y + BH) + ' V' + trunk[k].y);
+  for (var k = 1; k < trunk.length; k++) {               // 主干竖线：箭头指向下一节
+    paths.push({ d: 'M' + (BW / 2) + ' ' + (trunk[k - 1].y + BH) + ' V' + trunk[k].y, assoc: false, at: 'end' });
   }
-  T.nodes.forEach(function (c) {                         // 追问横线（圆角折线）
+  T.nodes.forEach(function (c) {                         // 追问横线（圆角折线），从父节点画起：箭头默认在起点指回父节点，rel=next 在终点指向子节点
     if (!c.parent || !byId[c.parent]) return;
-    var p = byId[c.parent];
+    var p = byId[c.parent], assoc = c.rel === 'assoc', at = c.rel === 'next' ? 'end' : 'start';
     var x1 = p.x + BW, y1 = p.y + BH / 2, x2 = c.x, y2 = c.y + BH / 2, xm = x1 + GX / 2;
-    if (y1 === y2) { paths.push('M' + x1 + ' ' + y1 + ' H' + x2); return; }
+    if (y1 === y2) { paths.push({ d: 'M' + x1 + ' ' + y1 + ' H' + x2, assoc: assoc, at: at }); return; }
     var r = Math.min(10, (y2 - y1) / 2);
-    paths.push('M' + x1 + ' ' + y1 + ' H' + (xm - r) + ' Q' + xm + ' ' + y1 + ' ' + xm + ' ' + (y1 + r) +
-               ' V' + (y2 - r) + ' Q' + xm + ' ' + y2 + ' ' + (xm + r) + ' ' + y2 + ' H' + x2);
+    paths.push({ d: 'M' + x1 + ' ' + y1 + ' H' + (xm - r) + ' Q' + xm + ' ' + y1 + ' ' + xm + ' ' + (y1 + r) +
+                    ' V' + (y2 - r) + ' Q' + xm + ' ' + y2 + ' ' + (xm + r) + ' ' + y2 + ' H' + x2, assoc: assoc, at: at });
   });
-  svg.innerHTML = paths.map(function (d) {
-    return '<path d="' + d + '" fill="none" stroke="var(--line)" stroke-width="1.5"/>';
-  }).join('');
+  // 兄弟节点共用父节点出来的一段线：虚线先画，实线盖在上面，通向实线子节点的共用段不会显示成虚线
+  paths.sort(function (a, b) { return b.assoc - a.assoc; });
+  svg.innerHTML = ARROW_DEF + paths.map(function (p) { return edge(p.d, p.assoc, p.at); }).join('');
 
   T.nodes.forEach(function (n) {                         // 方框
     var el = document.createElement('div');
-    el.className = 'node' + (n.parent ? '' : ' trunk') + (n.status === 'pending' ? ' pending' : '') + (n.status === 'extra' ? ' extra' : '') +
+    var section = !n.parent || /^(§|附录)/.test(n.label);    // 主干，以及挂在节下面的子节（§2a、附录 A）：左侧竖条
+    el.className = 'node' + (section ? ' trunk' : '') + (n.status === 'pending' ? ' pending' : '') + (n.status === 'extra' ? ' extra' : '') +
                    (n.id === T.current ? ' current' : '');
     el.style.cssText = 'left:' + n.x + 'px;top:' + n.y + 'px;width:' + BW + 'px;height:' + BH + 'px';
     el.innerHTML = '<span>' + inline(n.label) + '</span>';
@@ -373,6 +404,9 @@ function render(data) {
   var meta = [];
   if (T.progress) meta.push('读到 <b>' + inline(T.progress) + '</b>');
   if (byId[T.current]) meta.push('当前 <b>' + chain(byId[T.current]).map(function (c) { return inline(short(c)); }).join(' › ') + '</b>');
+  if (paths.length) meta.push(                           // 图例
+    '<span class="legend">先懂<svg width="26" height="8">' + edge('M1 4 H25', false, 'end') + '</svg>后懂</span>' +
+    '<span class="legend"><svg width="26" height="8">' + edge('M1 4 H25', true) + '</svg>关联</span>');
   document.getElementById('meta').innerHTML = meta.join('<span class="sep">·</span>');
 
   // 重画后保持原来打开的卡片
@@ -412,6 +446,8 @@ document.getElementById('panel').addEventListener('click', function (e) {   // �
   if (a && byId[a.dataset.id]) open(byId[a.dataset.id]);
   var pg = e.target.closest('[data-page]');
   if (pg) vscodeApi.postMessage({ page: +pg.dataset.page, search: pg.dataset.search });   // 交给扩展打开 PDF
+  var ext = e.target.closest('a.ext');
+  if (ext && vscodeApi) { e.preventDefault(); vscodeApi.postMessage({ url: ext.href }); }   // 预览里交给扩展用浏览器打开
 });
 function close() {
   document.body.classList.remove('panel-open');

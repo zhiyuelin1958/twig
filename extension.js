@@ -52,7 +52,10 @@ async function preview(uri) {
   panel.webview.html = tree.toHtml(tree.parse(doc.getText()));
   panels.set(key, panel);
   panel.onDidDispose(() => panels.delete(key));
-  panel.webview.onDidReceiveMessage(m => { if (m.page) openPdf(uri, m.page, m.search); });
+  panel.webview.onDidReceiveMessage(m => {
+    if (m.page) openPdf(uri, m.page, m.search);
+    if (m.url && /^https?:/.test(m.url)) vscode.env.openExternal(vscode.Uri.parse(m.url));   // 外部论文、网址：用浏览器打开
+  });
 }
 
 // 点卡片里的页码或图表：用 PDF Viewer 扩展打开元信息 pdf 指向的论文，并跳到对应页
