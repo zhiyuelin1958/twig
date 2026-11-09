@@ -135,7 +135,7 @@ async function newTree() {
 
 // Twig 文件放在哪：根目录下按 Zotero 分类建子文件夹，如 Twig阅读整理/大气科学文献1/2026暑假
 // 根目录取设置 twig.folder，没设时为 Zotero 数据目录旁的 Twig阅读整理；推不出数据目录时（如空白模板）用当前文件夹
-// 不是从 Zotero 选的论文，不分子文件夹，放在根目录
+// 不是从 Zotero 选的论文：当前文件夹在根目录之下（如正开着同一主题的 Twig 文件）时用当前文件夹，否则用根目录
 // 子文件夹：浏览时点过的那条路径；搜到的论文按它所在的分类，在多个分类里时让用户选
 async function twigFolder(item, pdf, trail) {
   const editor = vscode.window.activeTextEditor;
@@ -144,7 +144,10 @@ async function twigFolder(item, pdf, trail) {
   const data = pdf && zotero.dataDir(pdf);
   const root = vscode.workspace.getConfiguration('twig').get('folder') || (data && path.join(path.dirname(data), 'Twig阅读整理'));
   if (!root) return current;
-  if (!item) return root;
+  if (!item) {
+    const rel = path.relative(root, current);
+    return rel.startsWith('..') || path.isAbsolute(rel) ? root : current;
+  }
 
   let names = trail;
   if (!names.length) {

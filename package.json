@@ -3,7 +3,7 @@
   "displayName": "Twig 问枝 — Paper Reading Tree",
   "description": "读论文时把主线与追问画成树状图，点节点看知识卡片，点出处跳到原文对应页；配套的 AI 书写规则让 Claude Code、Codex、Gemini、Copilot 边讲边记、处处标出处，读完出题检验。",
   "publisher": "linyuze",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "license": "MIT",
   "engines": {
     "vscode": "^1.90.0"
