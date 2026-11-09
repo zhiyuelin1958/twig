@@ -35,13 +35,27 @@ Twig 把阅读过程画成一棵树：论文各节沿主干竖排，追问向右
 3. 安装 [PDF Viewer](https://marketplace.visualstudio.com/items?itemName=mathematic.vscode-pdf) 扩展，点出处时才能跳到原文。
 4. 用 Zotero 管理文献的（需要 Zotero 7 以上），在 Zotero 设置 → 高级 勾选“允许此计算机上的其他应用程序与 Zotero 通信”。
 
-### 2. 使用
+### 2. 推荐的文件夹布局
+
+建一个科研文件夹，用 VSCode 打开它作为工作区，Zotero 的数据文件夹和 Twig 文件都放在里面：
+
+```
+科研/                 ← 用 VSCode 打开这个文件夹
+├── Zotero/           ← Zotero 数据文件夹，PDF 在其中的 storage/
+└── Twig阅读整理/     ← Twig 文件，按 Zotero 分类建子文件夹
+```
+
+这样论文和 Twig 文件都在工作区里，AI 读写不用另外授权，资源管理器和搜索也都找得到。已有的 Zotero 数据文件夹可以整个移过来：先关掉 Zotero，把文件夹移进科研文件夹，再打开 Zotero，在 设置 → 高级 → 文件和文件夹 把数据存储位置改成新位置。
+
+不想这样放的，可以自己指定 Twig 文件的位置，见下文“个性化”。
+
+### 3. 使用
 
 Twig 的命令都在命令面板（Ctrl + Shift + P）里，输入 twig 就能找到。
 
 ![命令面板中的 Twig 命令](images/commands.png)
 
-**新建**：命令面板运行“Twig：新建 Twig”，按 Zotero 的文件夹逐层找到论文，或直接搜索。选中后，引文、PDF 路径和起始页码自动填好，文件放在 Zotero 数据目录旁的 `Twig阅读整理` 文件夹，按 Zotero 分类建子文件夹。不用 Zotero 的，选最下面“不用 Zotero”一组里的“从 PDF 新建”，选好 PDF 就能开始读，引文等由 AI 读 PDF 后填。
+**新建**：命令面板运行“Twig：新建 Twig”，按 Zotero 的文件夹逐层找到论文，或直接搜索。选中后，引文、PDF 路径和起始页码自动填好，文件放进 `Twig阅读整理` 下与 Zotero 分类对应的子文件夹。不用 Zotero 的，选最下面“不用 Zotero”一组里的“从 PDF 新建”，选好 PDF 就能开始读，引文等由 AI 读 PDF 后填。
 
 ![新建：按 Zotero 文件夹浏览或直接搜索，最下面是不用 Zotero 时的选项](images/zotero.png)
 
@@ -55,12 +69,12 @@ Twig 的命令都在命令面板（Ctrl + Shift + P）里，输入 twig 就能�
 
 **读完**：对 AI 说“读完了，出题”，得到提问清单和参考答案。想分享给别人，右键 `*_twig.md` →“导出 HTML”，生成一个独立网页。
 
-### 3. 个性化
+### 4. 个性化
 
 - **AI 的风格**：在 `skills/twig/` 下新建 `个人偏好.md`，写几条要求，例如“新术语先用一句话解释”。不要改其他文件，扩展升级时会被覆盖。
 - **存放位置**：在设置（`Ctrl + ,`）中搜索 `twig.folder`，填一个文件夹，新建的 Twig 文件都默认放在它下面：从 Zotero 新建的按分类建子文件夹，其他方式新建的放在当前打开的子文件夹或根目录。
 
-### 4. 卸载
+### 5. 卸载
 
 卸载扩展并重启 VSCode 后，书写规则自动删除，只保留 `个人偏好.md`；你的 Twig 文件不受影响。
 
