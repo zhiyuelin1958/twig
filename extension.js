@@ -1,4 +1,4 @@
-// Twig VSCode 扩展：预览 *_twig.md、导出 HTML、新建（可从 Zotero 取文献信息）、把 AI 书写规则装成各家 AI 的 skill
+// Twig VSCode 扩展：预览 *_twig.md、导出 HTML、新建（可从 Zotero 取文献信息）、按 Zotero 分类整理文件夹、把 AI 书写规则装成各家 AI 的 skill
 const vscode = require('vscode');
 const fs = require('fs');
 const os = require('os');
@@ -19,6 +19,7 @@ function activate(context) {
     vscode.commands.registerCommand('twig.preview', uri => preview(uri)),
     vscode.commands.registerCommand('twig.exportHtml', uri => exportHtml(uri)),
     vscode.commands.registerCommand('twig.newTree', newTree),
+    vscode.commands.registerCommand('twig.syncFolders', syncFolders),
     // 手动安装同时打开设置，之后扩展升级时规则跟着更新
     vscode.commands.registerCommand('twig.installSkill', async () => {
       await vscode.workspace.getConfiguration('twig').update('installSkill', true, vscode.ConfigurationTarget.Global);
@@ -141,8 +142,7 @@ async function twigFolder(item, pdf, trail) {
   const editor = vscode.window.activeTextEditor;
   const current = editor ? path.dirname(editor.document.uri.fsPath)
     : (vscode.workspace.workspaceFolders || [])[0]?.uri.fsPath || os.homedir();
-  const data = pdf && zotero.dataDir(pdf);
-  const root = vscode.workspace.getConfiguration('twig').get('folder') || (data && path.join(path.dirname(data), 'Twig阅读整理'));
+  const root = twigRoot(pdf && zotero.dataDir(pdf));
   if (!root) return current;
   if (!item) {
     const rel = path.relative(root, current);
@@ -161,7 +161,17 @@ async function twigFolder(item, pdf, trail) {
       names = paths[0] || [];
     }
   }
-  return path.join(root, ...names.map(n => n.replace(/[\\/:*?"<>|]/g, '_')));   // 去掉文件夹名里不允许的字符
+  return categoryDir(root, names);
+}
+
+// Twig 文件的根目录：设置 twig.folder，没设时为 Zotero 数据目录旁的 Twig阅读整理；都没有时为空
+function twigRoot(dataDir) {
+  return vscode.workspace.getConfiguration('twig').get('folder') || (dataDir && path.join(path.dirname(dataDir), 'Twig阅读整理'));
+}
+
+// Zotero 分类对应的文件夹，names 为从顶层往下的分类名；去掉文件夹名里不允许的字符
+function categoryDir(root, names) {
+  return path.join(root, ...names.map(n => n.replace(/[\\/:*?"<>|]/g, '_')));
 }
 
 // 选论文的搜索框，两种用法：
@@ -265,6 +275,118 @@ async function pickPdf(item) {
 async function choosePdf() {
   const files = await vscode.window.showOpenDialog({ filters: { PDF: ['pdf'] }, openLabel: '用这篇论文新建' });
   return files && files[0].fsPath;
+}
+
+// 整理文件夹：Zotero 里分类改名、移动，或论文换了分类后，把 Twig 文件移到论文现在所在分类的文件夹
+// 同一前缀的文件（如 01_Morrison等2009_提问清单.md、导出的 .html）一起移；移动后改写 pdf 的相对路径，没写 zotero 编号的补上
+// 不动的：已在论文所在的某个分类文件夹里的；对应不上 Zotero 文献、文献已删除或不在任何分类里的，列在结果里
+async function syncFolders() {
+  let plan;
+  try {
+    plan = await vscode.window.withProgress(
+      { location: vscode.ProgressLocation.Notification, title: 'Twig：对照 Zotero 分类' }, planMoves);
+  } catch (e) {
+    vscode.window.showWarningMessage(e.reason
+      ? '整理文件夹需要 Zotero 开着，并在 Zotero 设置 → 高级 勾选“允许此计算机上的其他应用程序与 Zotero 通信”'
+      : e.message);
+    return;
+  }
+  const { root, moves, skipped } = plan;
+
+  for (const m of moves) {                         // 论文在多个分类里时选一个
+    if (m.dirs.length === 1) { m.to = m.dirs[0]; continue; }
+    const chosen = await vscode.window.showQuickPick(m.dirs.map(d => ({ label: path.relative(root, d), dir: d })),
+      { placeHolder: m.label + ' 在多个分类里，选 Twig 文件移到哪个文件夹' });
+    m.to = chosen && chosen.dir;
+  }
+  const todo = moves.filter(m => m.to);
+  let moved = 0;
+  if (todo.length) {
+    const picked = await vscode.window.showQuickPick(todo.map(m => ({
+      label: path.basename(m.file),
+      description: path.relative(root, path.dirname(m.file)) + ' → ' + path.relative(root, m.to),
+      picked: true, move: m
+    })), { canPickMany: true, placeHolder: '按 Zotero 分类移动这些 Twig 文件（同一前缀的提问清单、参考答案一起移）' });
+    if (!picked) return;
+    for (const { move } of picked) {
+      const problem = await moveTwig(move, root);
+      if (problem) skipped.push(path.relative(root, move.file) + '：' + problem);
+      else moved++;
+    }
+  }
+  const message = moved ? `已移动 ${moved} 篇 Twig` : '没有移动 Twig 文件';
+  if (skipped.length) vscode.window.showInformationMessage(`${message}，${skipped.length} 篇没动`, { modal: true, detail: skipped.join('\n') });
+  else vscode.window.showInformationMessage(message + (todo.length ? '' : '，都已在论文所在分类的文件夹里'));
+}
+
+// 找出根目录下要移动的 Twig 文件：{ root, moves: [{ file, key, label, dirs }], skipped }，dirs 为论文所在各分类的文件夹
+async function planMoves() {
+  const root = twigRoot(await zotero.libraryDir());
+  if (!root || !fs.existsSync(root)) throw new Error('找不到 Twig 文件的根目录' + (root ? '：' + root : '，请在设置里填 twig.folder'));
+  const all = await zotero.collections();
+  const moves = [], skipped = [];
+  const files = fs.readdirSync(root, { recursive: true }).filter(f => f.endsWith('_twig.md')).map(f => path.join(root, f));
+  for (const file of files) {
+    const name = path.relative(root, file);
+    const key = await zotero.paperKey(tree.parse(fs.readFileSync(file, 'utf8')), file);
+    const it = key && await zotero.item(key);
+    if (!it) { skipped.push(name + '：' + (key ? 'Zotero 里已删除这篇文献' : '对应不到 Zotero 里的文献')); continue; }
+    const dirs = (await zotero.folderPaths(it, all)).map(names => categoryDir(root, names));
+    if (!dirs.length) { skipped.push(name + '：这篇文献不在任何分类里'); continue; }
+    if (dirs.some(d => samePath(d, path.dirname(file)))) continue;
+    moves.push({ file, key: it.key, label: zotero.label(it), dirs });
+  }
+  return { root, moves, skipped };
+}
+
+// 移动一篇 Twig 及同一前缀的文件到 m.to；返回没移动的原因，移好时返回空
+// 编号在目标文件夹里已被占用时顺延，提问清单、参考答案第一行标题里的编号跟着改
+async function moveTwig(m, root) {
+  const from = path.dirname(m.file);
+  const prefix = path.basename(m.file).slice(0, -'twig.md'.length);         // 如 01_Morrison等2009_
+  const group = fs.readdirSync(from).filter(f => f.startsWith(prefix));
+  const uris = group.map(f => vscode.Uri.file(path.join(from, f)));
+  if (vscode.workspace.textDocuments.some(d => d.isDirty && uris.some(u => samePath(u.fsPath, d.uri.fsPath)))) {
+    return '有未保存的修改，保存后再整理';
+  }
+
+  fs.mkdirSync(m.to, { recursive: true });
+  const used = fs.readdirSync(m.to).map(f => (f.match(/^(\d+)_.*_twig\.md$/) || [])[1]).filter(Boolean).map(Number);
+  const number = prefix.match(/^(\d+)_/);
+  const renumber = number && used.includes(+number[1]);
+  const newNumber = renumber ? String(Math.max(...used) + 1).padStart(2, '0') : number && number[1];
+  const newPrefix = renumber ? newNumber + prefix.slice(number[1].length) : prefix;
+  const target = f => path.join(m.to, newPrefix + f.slice(prefix.length));
+  if (group.some(f => fs.existsSync(target(f)))) return '目标文件夹里已有同名文件';
+
+  const edit = new vscode.WorkspaceEdit();         // 由 VSCode 改名，开着的编辑器跟着换到新位置
+  group.forEach((f, i) => edit.renameFile(uris[i], vscode.Uri.file(target(f))));
+  if (!await vscode.workspace.applyEdit(edit)) return '移动失败';
+  const panel = panels.get(vscode.Uri.file(m.file).toString());
+  if (panel) panel.dispose();                      // 旧位置的预览点不到原文了，关掉
+
+  const twig = target(path.basename(m.file));
+  let text = fs.readFileSync(twig, 'utf8');
+  const meta = tree.parse(text);
+  if (meta.pdf) text = text.replace(/^pdf:.*$/m, () => 'pdf: ' + zotero.pdfPath(path.resolve(from, meta.pdf), twig));
+  if (!meta.zotero) {
+    text = /^zotero:.*$/m.test(text) ? text.replace(/^zotero:.*$/m, () => 'zotero: ' + m.key)
+      : text.replace(/^pdf:.*$/m, line => line + '\nzotero: ' + m.key);
+  }
+  fs.writeFileSync(twig, text);
+  if (renumber) {
+    for (const f of group.filter(f => f.endsWith('.md') && !f.endsWith('twig.md'))) {
+      const file = target(f);
+      fs.writeFileSync(file, fs.readFileSync(file, 'utf8').replace(/^# \d+ /, '# ' + newNumber + ' '));
+    }
+  }
+  for (let d = from; !samePath(d, root) && fs.readdirSync(d).length === 0; d = path.dirname(d)) fs.rmdirSync(d);   // 删掉搬空的文件夹
+  return '';
+}
+
+// 两个路径是否同一位置（Windows 上不分大小写）
+function samePath(a, b) {
+  return path.relative(a, b) === '';
 }
 
 // 书写规则要写入用户家目录，所以第一次启动先询问；用户同意后，扩展升级或新装了某家 AI 时自动更新

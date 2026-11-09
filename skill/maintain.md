@@ -30,8 +30,8 @@
 |---|---|
 | `skill/build.cjs` | 解析源文件（`parse`、`figurePages`）、检查格式（`check`）、生成页面（`toHtml`）；命令行和扩展共用 |
 | `skill/viewer.html` | 页面：样式和脚本，按注释标题分节（公式、跳转原文、行内格式、块级排版、画树、知识卡片、缩放）；KaTeX 版本在 `<head>` |
-| `extension.js` | 只放与 VSCode 交互的部分：命令、预览面板、新建时的搜索框、打开 PDF（`openPdf`）、安装 skill |
-| `zotero.js` | 通过 Zotero 本地 API 列文件夹、搜索文献、取 PDF 路径和所在分类，由 PDF 路径推出数据目录，把引文、`pdf`、`firstPage` 填进模板；不用 vscode 接口 |
+| `extension.js` | 只放与 VSCode 交互的部分：命令、预览面板、新建时的搜索框、打开 PDF（`openPdf`）、按 Zotero 分类整理文件夹（`syncFolders`）、安装 skill |
+| `zotero.js` | 通过 Zotero 本地 API 列文件夹、搜索文献、取 PDF 路径和所在分类，推出数据目录和 Twig 文件对应的文献编号，把引文、`pdf`、`zotero`、`firstPage` 填进模板；不用 vscode 接口 |
 | `uninstall.js` | 卸载清理：删掉装进各家 AI 的规则文件，保留 `个人偏好.md`，跳过链接到仓库的目录 |
 
 - 新功能按职责放进对应文件，再放进文件中对应的一节；没有合适的节时新开一节并加注释标题。
