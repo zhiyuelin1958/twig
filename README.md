@@ -8,11 +8,7 @@
 
 Twig 把阅读过程画成一棵树：论文各节沿主干竖排，你向 AI 追问的问题向右分叉，可以分很多层。每个节点有一张知识卡片，回头复习时，顺着线就能看出“先懂什么，才能懂什么”。
 
-<table><tr>
-<td><img src="images/tree.png" height="300" alt="树状图：主干是论文各节，追问向右分叉"><br>树状图：主干是论文各节，追问向右分叉</td>
-<td><img src="images/card.png" height="300" alt="知识卡片：每段标出处"><br>知识卡片：每段标出处</td>
-<td><img src="images/source.png" height="300" alt="出处可点，跳到原文对应位置"><br>出处可点，跳到原文对应位置</td>
-</tr></table>
+![树状图：主干是论文各节，追问向右分叉，虚线框是暂挂的问题](images/tree.png)
 
 ## 配合 AI 读论文
 
@@ -23,6 +19,8 @@ Twig 把阅读过程画成一棵树：论文各节沿主干竖排，你向 AI �
 - **按知识的依赖关系挂**：新问题挂在它依赖的概念下面；合并节点、调整结构前先问你；
 - **不怕对话太长**：进度记在文件里，开新对话后让 AI 读一下这个文件，就能接着读。
 
+![知识卡片：每段标出处，公式、表格、卡片链接都能显示](images/card.png)
+
 ### 读完出题
 
 读完全文后，AI 会写一份提问清单和一份参考答案，分成两个文件，你可以先自己作答再对答案：
@@ -32,8 +30,8 @@ Twig 把阅读过程画成一棵树：论文各节沿主干竖排，你向 AI �
 - 答案逐题带出处，可以回原文核对。
 
 <table><tr>
-<td><img src="images/questions-1.png" height="300" alt="提问清单：由浅入深分层"><br>提问清单：由浅入深分层</td>
-<td><img src="images/answers.png" height="300" alt="参考答案：逐题带出处"><br>参考答案：逐题带出处</td>
+<td><img src="images/questions-1.png" width="400" alt="提问清单：由浅入深分层"><br>提问清单：由浅入深分层</td>
+<td><img src="images/answers.png" width="400" alt="参考答案：逐题带出处"><br>参考答案：逐题带出处</td>
 </tr></table>
 
 ## 功能
@@ -44,6 +42,8 @@ Twig 把阅读过程画成一棵树：论文各节沿主干竖排，你向 AI �
 - **跳转原文**：卡片里的页码和图表号都可以点，打开论文并定位到出处所在的那一行。需要另装 [PDF Viewer](https://marketplace.visualstudio.com/items?itemName=mathematic.vscode-pdf) 扩展。
 - **导出网页**：右键 `*_twig.md` →“导出 HTML”，生成一个独立网页，可以直接发给别人。
 - **新建**：命令面板执行“Twig：新建 Twig”，从模板新建文件。
+
+![出处里的页码和图表都能点，跳到原文对应位置](images/source.png)
 
 ## 文件格式
 
