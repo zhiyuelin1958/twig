@@ -37,9 +37,13 @@ Twig 把阅读过程画成一棵树：论文各节沿主干竖排，追问向右
 
 ### 2. 使用
 
-**新建**：命令面板运行“Twig：新建 Twig”，按 Zotero 的文件夹逐层找到论文，或直接搜索。选中后，引文、PDF 路径和起始页码自动填好，文件放在 Zotero 数据目录旁的 `Twig阅读整理` 文件夹，按 Zotero 分类建子文件夹。不用 Zotero 的，选最下面的“从 PDF 新建”，选好 PDF 就能开始读，引文等由 AI 读 PDF 后填。
+Twig 的四个命令都在命令面板（Ctrl + Shift + P）里，输入 twig 就能找到。
 
-![新建：按 Zotero 文件夹浏览或直接搜索，最下面是空白模板](images/zotero.png)
+![命令面板中的四个 Twig 命令](images/commands.png)
+
+**新建**：命令面板运行“Twig：新建 Twig”，按 Zotero 的文件夹逐层找到论文，或直接搜索。选中后，引文、PDF 路径和起始页码自动填好，文件放在 Zotero 数据目录旁的 `Twig阅读整理` 文件夹，按 Zotero 分类建子文件夹。不用 Zotero 的，选最下面“不用 Zotero”一组里的“从 PDF 新建”，选好 PDF 就能开始读，引文等由 AI 读 PDF 后填。
+
+![新建：按 Zotero 文件夹浏览或直接搜索，最下面是不用 Zotero 时的选项](images/zotero.png)
 
 **阅读**：
 
