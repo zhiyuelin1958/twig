@@ -32,13 +32,32 @@ function parse(text) {
   }
   for (const n of nodes) n.body = n.body.join('\n').trim();
   tree.nodes = nodes;
+  tree.figures = figurePages(tree.figures || '');
   return tree;
 }
 
-// 找出写错的节点标题、父节点、卡片链接和元信息 current
+// 图表所在页。元信息写成 figures: Fig. 1=993, Fig. 2=995, Tab. 1=994 → { 'Fig 1': 993, 'Fig 2': 995, 'Tab 1': 994 }
+function figurePages(line) {
+  const map = {};
+  for (const [, kind, num, page] of line.matchAll(/(Fig|Tab)\w*\.?\s*([A-Z]?\d+)\s*=\s*(\d+)/g)) map[kind + ' ' + num] = +page;
+  return map;
+}
+
+// 正文里的图表引用，如 Fig. 8、Figs. 8 and 9、Tab. 1、Table 2；与 viewer.html 中的 REF 相同
+const REF = /\b(Fig|Tab)(?:s|ures?|les?)?\.?\s*([A-Z]?\d+[a-z]?(?:\s*(?:,|，|、|–|-|and)\s*[A-Z]?\d+[a-z]?)*)/g;
+function figureRefs(text) {
+  const keys = [];
+  for (const [, kind, nums] of text.matchAll(REF)) {
+    for (const [, num] of nums.matchAll(/([A-Z]?\d+)[a-z]?/g)) keys.push(kind + ' ' + num);
+  }
+  return keys;
+}
+
+// 找出写错的节点标题、父节点、卡片链接、元信息 current，以及写了 pdf 后没登记页码的图表
 function check(tree) {
   const ids = new Set(tree.nodes.map(n => n.id));
   const problems = [];
+  const missing = new Set();
   for (const line of tree.bad) problems.push(`“${line}”不是合法的节点标题（id 只能用英文字母、数字、_、-；卡片里的小标题用 ###）`);
   if (tree.current && !ids.has(tree.current)) problems.push(`元信息 current 指向不存在的节点 ${tree.current}`);
   for (const n of tree.nodes) {
@@ -46,7 +65,9 @@ function check(tree) {
     for (const [, target] of n.body.matchAll(/\]\(#([\w-]+)\)/g)) {
       if (!ids.has(target)) problems.push(`节点 ${n.id} 链接到不存在的 ${target}`);
     }
+    if (tree.pdf) figureRefs(n.body).forEach(k => { if (!tree.figures[k]) missing.add(k.replace(' ', '. ')); });
   }
+  if (missing.size) problems.push(`元信息 figures 缺少这些图表的页码，点不到原文：${[...missing].sort((a, b) => a.localeCompare(b, 'en', { numeric: true })).join('、')}`);
   return problems;
 }
 

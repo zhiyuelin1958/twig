@@ -48,12 +48,13 @@ async function preview(uri) {
   panel.webview.html = tree.toHtml(tree.parse(doc.getText()));
   panels.set(key, panel);
   panel.onDidDispose(() => panels.delete(key));
-  panel.webview.onDidReceiveMessage(m => { if (m.page) openPdf(uri, m.page); });
+  panel.webview.onDidReceiveMessage(m => { if (m.page) openPdf(uri, m.page, m.search); });
 }
 
-// 点卡片里的【原文 · p.xxx】：用 PDF Viewer 扩展打开元信息 pdf 指向的论文，并跳到对应页
+// 点卡片里的页码或图表：用 PDF Viewer 扩展打开元信息 pdf 指向的论文，并跳到对应页
 // 期刊页码减去 firstPage（PDF 第 1 页对应的期刊页码）再加 1，得到 PDF 页码
-async function openPdf(uri, page) {
+// 带引文 p.xxx「…」时，让 PDF Viewer 里的 pdf.js 从该页起搜索这句原文并高亮，定位到行
+async function openPdf(uri, page, search) {
   if (!vscode.extensions.getExtension('mathematic.vscode-pdf')) {
     vscode.window.showWarningMessage('跳转原文需要安装 PDF Viewer 扩展（mathematic.vscode-pdf）');
     return;
@@ -77,7 +78,9 @@ async function openPdf(uri, page) {
       }
     }
   }
-  const target = vscode.Uri.file(file).with({ fragment: 'page=' + pdfPage });
+  let fragment = 'page=' + pdfPage;
+  if (search) fragment += '&search=' + encodeURIComponent(search) + '&phrase=true';
+  const target = vscode.Uri.file(file).with({ fragment });
   await vscode.commands.executeCommand('vscode.openWith', target, 'pdf.view', column);
 }
 

@@ -4,6 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Twig</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js" onload="katexReady()"></script>
 <style>
   :root {
     --bg: #f2f6fc;          /* 背景：浅蓝 */
@@ -109,6 +111,9 @@
   .m { font-family: "Cambria Math", Cambria, "Times New Roman", serif; font-size: 1.06em; white-space: nowrap; }
   .eq { margin: 10px 0; padding: 8px 14px; background: var(--bg); border-radius: 8px; text-align: center;
         font-family: "Cambria Math", Cambria, "Times New Roman", serif; font-size: 15.5px; overflow-x: auto; }
+  .eq .katex-display { margin: 0; }
+  .eq .katex { font-size: 1.1em; }
+  .eq .zh, .eq .zh * { font-family: "PingFang SC", "Microsoft YaHei", sans-serif; font-size: 0.92em; }
   sub, sup { line-height: 0; font-size: 75%; }
   a.link { color: var(--accent); text-decoration: none; border-bottom: 1px solid var(--box-border); cursor: pointer; }
   a.link:hover { border-bottom-color: var(--accent); }
@@ -137,10 +142,14 @@
 
 <script>
 var BW = 220, BH = 54, GX = 60, GY = 14, RH = BH + GY;   // 方框宽、高，列间距、行间距
-var T, byId, kids, trunk, elById, openId = null;
+var T, byId, kids, trunk, elById, openId = null;          // T：build.cjs 解析出的数据；其余由 render 建立
+// VSCode 预览中可与扩展通信；导出的独立网页里为 null
+var vscodeApi = typeof acquireVsCodeApi === 'function' ? acquireVsCodeApi() : null;
 
-/* ---------- 行内格式 ---------- */
+/* ---------- 公式 ---------- */
 
+// 行内公式 $…$：把简单 LaTeX 换成 Unicode，如 $N_{0r}$ → N<sub>0r</sub>。
+// 不用 KaTeX：它会把积分上下限挤在符号旁边，Unicode 显示反而更整齐
 var SYM = {
   alpha: 'α', beta: 'β', gamma: 'γ', Gamma: 'Γ', delta: 'δ', Delta: 'Δ', epsilon: 'ε', varepsilon: 'ε',
   zeta: 'ζ', eta: 'η', theta: 'θ', kappa: 'κ', lambda: 'λ', Lambda: 'Λ', mu: 'μ', nu: 'ν', xi: 'ξ',
@@ -151,7 +160,6 @@ var SYM = {
   partial: '∂', nabla: '∇', to: '→', rightarrow: '→', Rightarrow: '⇒', leftarrow: '←',
   ldots: '…', cdots: '⋯', circ: '°', prime: '′', in: '∈', quad: '　'
 };
-// 把简单 LaTeX 换成 Unicode：$N_{0r}$ → N<sub>0r</sub>
 function tex(s) {
   s = s.replace(/\\(?:mathrm|text|rm|mathit|operatorname|mathbf)\s*/g, '')
        .replace(/\\[,;:! ]/g, ' ')
@@ -160,14 +168,62 @@ function tex(s) {
   function f(_, k, c) { return k === '_' ? '<sub>' + c + '</sub>' : '<sup>' + c + '</sup>'; }
   return s.replace(/([_^])\{([^{}]*)\}/g, f).replace(/([_^])([^\s{}<])/g, f).replace(/[{}]/g, '');
 }
+
+// 行间公式 $$…$$（浅蓝框）：用 KaTeX 排版，支持 \frac、积分上下限、aligned 多行；KaTeX 没加载上（如离线）时退回 Unicode。
+// KaTeX 的字体没有中文，会退回宋体，所以把中文片段（含全角标点）标上 zh 类，由 CSS 改用正文字体
+var CJK = /[　-〿一-鿿＀-￯]+/g;
+var KATEX = { displayMode: true, throwOnError: false, strict: false, trust: function (c) { return c.command === '\\htmlClass'; } };
+function eq(src) {
+  if (window.katex) {
+    var marked = src.replace(CJK, function (s) { return '\\htmlClass{zh}{\\text{' + s + '}}'; });
+    try { return '<div class="eq">' + katex.renderToString(marked, KATEX) + '</div>'; } catch (e) {}
+  }
+  return '<div class="eq">' + tex(esc(src.replace(/\n/g, ' '))) + '</div>';
+}
+function katexReady() { if (openId && byId[openId]) open(byId[openId], true); }   // KaTeX 加载完，重画已打开的卡片
+
+/* ---------- 跳转原文：页码、图表做成链接，点击后由扩展打开 PDF ---------- */
+
+// 页码 p.994、p.998–999，后面可跟原文引文 p.998「…」：引文不显示，点击时 PDF 搜索它，定位到那一行
+var PAGE = /p\.(\d+)([–-]\d+)?(?:「([^」]+)」)?/g;
+// 图表 Fig. 8、Figs. 8 and 9、Tab. 1、Table 2；所在页查元信息 figures（build.cjs 已解析成 { 'Fig 8': 999 }）。与 build.cjs 中的 REF 相同
+var REF = /\b(Fig|Tab)(?:s|ures?|les?)?\.?\s*([A-Z]?\d+[a-z]?(?:\s*(?:,|，|、|–|-|and)\s*[A-Z]?\d+[a-z]?)*)/g;
+
+function attr(s) { return s.replace(/"/g, '&quot;'); }
+function pageLink(page, text, title, quote) {
+  return '<a class="pg" data-page="' + page + '"' + (quote ? ' data-search="' + attr(quote) + '"' : '') +
+    ' title="' + attr(title) + '">' + text + '</a>';
+}
+function pageRef(all, p, range, quote) {
+  var title = quote ? '打开原文第 ' + p + ' 页，定位到“' + quote + '”' : '打开原文第 ' + p + ' 页';
+  return pageLink(p, 'p.' + p + (range || ''), title, quote);
+}
+function figRef(all, kind, nums) {
+  function link(num, text) {                                           // 子图 Fig. 8a 按 Fig. 8 查页
+    var p = T.figures[kind + ' ' + num.replace(/[a-z]$/, '')];
+    return p ? pageLink(p, text, '打开 ' + kind + '. ' + num + ' 所在的原文第 ' + p + ' 页') : text;
+  }
+  if (/^[A-Z]?\d+[a-z]?$/.test(nums)) return link(nums, all);          // 单个图表：整个“Fig. 8”可点
+  return all.slice(0, all.length - nums.length) +                      // 多个图表：每个编号各自可点
+    nums.replace(/[A-Z]?\d+[a-z]?/g, function (num) { return link(num, num); });
+}
+// 只在 VSCode 预览且元信息写了 pdf 时做成链接；导出的网页只去掉引文，悬停可见
+function pages(s) {
+  if (!vscodeApi || !T.pdf) {
+    return s.replace(PAGE, function (all, p, range, quote) {
+      return quote ? '<span title="' + attr(quote) + '">p.' + p + (range || '') + '</span>' : all;
+    });
+  }
+  return s.split(/(<a\b[^>]*>.*?<\/a>)/).map(function (part, i) {   // 已有的链接里不再套链接
+    return i % 2 ? part : part.replace(PAGE, pageRef).replace(REF, figRef);
+  }).join('');
+}
+
+/* ---------- 行内格式 ---------- */
+
 function esc(s) { return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
 function short(n) { return n.label.split('：')[0]; }
-// 页码 p.994 做成可点的链接，交给扩展打开 PDF；只在 VSCode 预览且元信息写了 pdf 时生效
-function pages(s) {
-  if (!vscodeApi || !T.pdf) return s;
-  return s.replace(/p\.(\d+)/g, '<a class="pg" data-page="$1" title="打开原文第 $1 页">p.$1</a>');
-}
-// 处理顺序：转义 → 代码、公式先暂存 → [文字](#节点id) 卡片链接 → [文字](网址) → **加粗** → *斜体* → 方括号出处里的页码
+// 处理顺序：转义 → 代码、公式先暂存 → [文字](#节点id) 卡片链接 → [文字](网址) → **加粗** → *斜体* → 页码与图表
 function inline(s, linked) {
   var keep = [];
   function stash(h) { keep.push(h); return '\u0000' + (keep.length - 1) + '\u0000'; }
@@ -181,13 +237,10 @@ function inline(s, linked) {
     })
     .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, '<a href="$2" target="_blank">$1</a>')
     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\*([^*\s][^*]*?)\*/g, '<em>$1</em>')
-    .replace(/\[[^\[\]]*p\.\d[^\[\]]*\]/g, pages);                     // 如 [§4b p.998；Fig. 8]
+    .replace(/\*([^*\s][^*]*?)\*/g, '<em>$1</em>');
+  s = pages(s);                                                        // 正文任何位置的页码与图表
   return s.replace(/\u0000(\d+)\u0000/g, function (_, i) { return keep[i]; });
 }
-
-// VSCode 预览中可与扩展通信；导出的独立网页里为 null
-var vscodeApi = typeof acquireVsCodeApi === 'function' ? acquireVsCodeApi() : null;
 
 /* ---------- 块级排版（Markdown 子集） ---------- */
 
@@ -202,11 +255,12 @@ function md(text, linked) {
       var h = 'h' + m[1].length; out.push('<' + h + '>' + il(m[2]) + '</' + h + '>'); i++;
     } else if (/^---+$/.test(t)) { out.push('<hr>'); i++; }            // 分隔线
     else if ((m = t.match(/^【(原文|背景|推断)(?:\s*·\s*(.+))?】$/))) {   // 来源标签
-      var where = m[2] ? il(m[2]) : '';
-      if (m[1] === '原文') where = pages(where);                       // 标签里每个页码各自可点
+      var where = m[2] ? il(m[2]) : '';                                // 标签里每个页码、图表各自可点
       out.push('<div class="src ' + m[1] + '">' + m[1] + (where ? ' · ' + where : '') + '</div>'); i++;
-    } else if ((m = t.match(/^\$\$(.+)\$\$$/))) {                       // 单独成行的公式
-      out.push('<div class="eq">' + tex(esc(m[1].trim())) + '</div>'); i++;
+    } else if (t.slice(0, 2) === '$$') {                               // 行间公式：$$…$$，可跨多行
+      var src = [t.slice(2)];
+      while (!/\$\$$/.test(src[src.length - 1]) && i + 1 < lines.length) src.push(lines[++i].trim());
+      out.push(eq(src.join('\n').replace(/\$\$$/, '').trim())); i++;
     } else if (t[0] === '|') {                                         // 表格
       var rows = [];
       while (i < lines.length && lines[i].trim()[0] === '|') { rows.push(lines[i].trim()); i++; }
@@ -350,7 +404,7 @@ document.getElementById('panel').addEventListener('click', function (e) {   // �
   var a = e.target.closest('[data-id]');
   if (a && byId[a.dataset.id]) open(byId[a.dataset.id]);
   var pg = e.target.closest('[data-page]');
-  if (pg) vscodeApi.postMessage({ page: +pg.dataset.page });   // 交给扩展打开 PDF
+  if (pg) vscodeApi.postMessage({ page: +pg.dataset.page, search: pg.dataset.search });   // 交给扩展打开 PDF
 });
 function close() {
   document.body.classList.remove('panel-open');
