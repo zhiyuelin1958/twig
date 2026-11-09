@@ -97,8 +97,8 @@ async function findPdf(meta, twigFile) {
   try {
     list = (await lib.pdfs(meta[lib.field])).filter(p => fs.existsSync(p.file));
   } catch (e) {
-    const h = e.reason && (lib.help[e.reason] || Object.values(lib.help)[0]);
-    vscode.window.showWarningMessage(missing + (h ? '。按文献编号查 ' + lib.name + ' 也没成功：' + h.label + '，' + h.detail : ''));
+    const h = library.explain(lib, e);
+    vscode.window.showWarningMessage(missing + '。按文献编号查 ' + lib.name + ' 也没成功：' + (h ? h.label + '，' + h.detail : e.message));
     return '';
   }
   if (!list.length) { vscode.window.showWarningMessage(missing + '，' + lib.name + ' 里这篇文献也没有本机能打开的 PDF'); return ''; }
@@ -176,8 +176,8 @@ async function newTree() {
 // 子文件夹：浏览时点过的那条路径；搜到的论文按它所在的分类，在多个分类里时让用户选
 async function twigFolder(lib, item, pdf, trail) {
   const editor = vscode.window.activeTextEditor;
-  const current = editor ? path.dirname(editor.document.uri.fsPath)
-    : (vscode.workspace.workspaceFolders || [])[0]?.uri.fsPath || os.homedir();
+  const ws = currentWorkspace();
+  const current = editor ? path.dirname(editor.document.uri.fsPath) : ws ? ws.uri.fsPath : os.homedir();
   const root = await twigRoot(item || pdf ? lib : null, pdf);
   if (!root) return current;
   if (!item) {
@@ -227,9 +227,9 @@ function pickPaper(lib) {
   const fromPdf = { label: '$(file-pdf) 从 PDF 新建', description: '只填 PDF 路径，引文等由 AI 读 PDF 后填', alwaysShow: true, item: null, fromPdf: true };
   const blank = { label: '$(file) 空白模板', alwaysShow: true, item: null };
   const tail = [separator('不用 ' + lib.name), fromPdf, blank];
-  // 连不上文献库时显示在列表顶部的说明（文字见各文献库的 help），选中它不做任何事
-  const notice = reason => {
-    const h = lib.help[reason] || Object.values(lib.help)[0];
+  // 读不了文献库时显示在列表顶部的说明（文字见各文献库的 help），选中它不做任何事
+  const notice = e => {
+    const h = library.explain(lib, e) || { label: '读取 ' + lib.name + ' 出错', detail: e.message };
     return { label: '$(info) ' + h.label, detail: h.detail + '；或选下面的“从 PDF 新建”', alwaysShow: true, notice: true };
   };
   const box = vscode.window.createQuickPick();
@@ -247,7 +247,7 @@ function pickPaper(lib) {
       if (id === latest) box.items = [...items, ...tail];
     } catch (e) {
       if (id === latest) {
-        box.items = [notice(e.reason), ...tail];
+        box.items = [notice(e), ...tail];
         box.activeItems = [fromPdf];               // 默认选中“从 PDF 新建”，回车直接选 PDF
       }
     }
@@ -335,8 +335,8 @@ async function syncFolders() {
     plan = await vscode.window.withProgress(
       { location: vscode.ProgressLocation.Notification, title: 'Twig：对照 ' + lib.name + ' 分类' }, () => planMoves(lib));
   } catch (e) {
-    const h = e.reason && (lib.help[e.reason] || Object.values(lib.help)[0]);
-    vscode.window.showWarningMessage(h ? '整理文件夹需要读取 ' + lib.name + '：' + h.label + '。' + h.detail : e.message);
+    const h = library.explain(lib, e);
+    vscode.window.showWarningMessage(h ?'整理文件夹需要读取 ' + lib.name + '：' + h.label + '。' + h.detail : e.message);
     return;
   }
   const { root, moves, skipped } = plan;
@@ -381,7 +381,7 @@ async function planMoves(lib) {
     if (!p) { skipped.push(name + '：' + (key ? lib.name + ' 里已删除这篇文献' : '对应不到 ' + lib.name + ' 里的文献')); continue; }
     const dirs = (await lib.folderPaths(p, all)).map(names => categoryDir(root, names));
     if (!dirs.length) { skipped.push(name + '：这篇文献不在任何分类里'); continue; }
-    if (dirs.some(d => samePath(d, path.dirname(file)))) continue;
+    if (dirs.some(d => library.samePath(d, path.dirname(file)))) continue;
     moves.push({ file, key: p.key, label: library.label(p), dirs });
   }
   return { root, moves, skipped };
@@ -394,7 +394,7 @@ async function moveTwig(m, root, field) {
   const prefix = path.basename(m.file).slice(0, -'twig.md'.length);         // 如 01_Morrison等2009_
   const group = fs.readdirSync(from).filter(f => f.startsWith(prefix));
   const uris = group.map(f => vscode.Uri.file(path.join(from, f)));
-  if (vscode.workspace.textDocuments.some(d => d.isDirty && uris.some(u => samePath(u.fsPath, d.uri.fsPath)))) {
+  if (vscode.workspace.textDocuments.some(d => d.isDirty && uris.some(u => library.samePath(u.fsPath, d.uri.fsPath)))) {
     return '有未保存的修改，保存后再整理';
   }
 
@@ -425,13 +425,8 @@ async function moveTwig(m, root, field) {
       fs.writeFileSync(file, fs.readFileSync(file, 'utf8').replace(/^# \d+ /, '# ' + newNumber + ' '));
     }
   }
-  for (let d = from; !samePath(d, root) && fs.readdirSync(d).length === 0; d = path.dirname(d)) fs.rmdirSync(d);   // 删掉搬空的文件夹
+  for (let d = from; !library.samePath(d, root) && fs.readdirSync(d).length === 0; d = path.dirname(d)) fs.rmdirSync(d);   // 删掉搬空的文件夹
   return '';
-}
-
-// 两个路径是否同一位置（Windows 上不分大小写）
-function samePath(a, b) {
-  return path.relative(a, b) === '';
 }
 
 // 书写规则要写入用户家目录，所以第一次启动先询问；用户同意后，扩展升级或新装了某家 AI 时自动更新

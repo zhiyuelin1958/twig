@@ -82,4 +82,14 @@ function pdfPath(pdf, twigFile) {
   return rel.split(path.sep).join('/');
 }
 
-module.exports = { open, citation, firstPage, label, fileName, setKey, fill, fillPdf, pdfPath };
+// 文献库出错时给用户看的说明 { label, detail }（见各文献库的 help）；不是文献库报的错（没有 reason）时为 null
+function explain(lib, e) {
+  return e && e.reason ? lib.help[e.reason] || Object.values(lib.help)[0] : null;
+}
+
+// 两个路径是否同一位置（Windows 上不分大小写）
+function samePath(a, b) {
+  return path.relative(a, b) === '';
+}
+
+module.exports = { open, citation, firstPage, label, fileName, setKey, fill, fillPdf, pdfPath, explain, samePath };

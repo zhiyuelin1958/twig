@@ -58,7 +58,7 @@ function open(bibFile) {
       if (meta.citekey) return meta.citekey;
       if (!meta.pdf) return null;
       const pdf = path.resolve(path.dirname(twigFile), meta.pdf);
-      const p = (await load()).papers.find(p => p.files.some(f => samePath(f.file, pdf)));
+      const p = (await load()).papers.find(p => p.files.some(f => library.samePath(f.file, pdf)));
       return p ? p.key : null;
     },
     async pdfs(key) {
@@ -281,11 +281,6 @@ function parseGroups(s) {
     if (m[2] === 'ExplicitGroup') explicit.set(g.id, parts.slice(2).filter(Boolean));
   }
   return { groups, explicit };
-}
-
-// 两个路径是否同一位置（Windows 上不分大小写）
-function samePath(a, b) {
-  return path.relative(a, b) === '';
 }
 
 module.exports = { open };

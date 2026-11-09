@@ -72,6 +72,11 @@
     transform: translateX(100%); transition: transform .22s ease;
   }
   body.panel-open #panel { transform: none; }
+  /* 卡片左边缘：拖动改宽度，双击恢复默认 */
+  #resize { position: absolute; left: -3px; top: 0; bottom: 0; width: 6px; cursor: col-resize; }
+  #resize:hover, body.resizing #resize { background: var(--box-border); }
+  body.resizing { cursor: col-resize; user-select: none; }
+  body.resizing main, body.resizing #panel { transition: none; }
   .bar { display: flex; align-items: center; gap: 12px; padding: 12px 16px 12px 24px;
          border-bottom: 1px solid var(--border); }
   .crumb { flex: 1; color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -133,6 +138,7 @@
   <button id="zoomOut" title="缩小">−</button><button id="zoomIn" title="放大">+</button>
 </div>
 <aside id="panel">
+  <div id="resize" title="拖动调整宽度，双击恢复默认"></div>
   <div class="bar"><div class="crumb" id="crumb"></div><button id="close" aria-label="关闭">×</button></div>
   <div id="card"></div>
 </aside>
@@ -397,6 +403,7 @@ function open(n, keepScroll) {
   }
   card.innerHTML = html;
   card.scrollTop = keepScroll ? top : 0;
+  if (!document.body.classList.contains('panel-open')) document.body.style.removeProperty('--panel-w');   // 重新弹出时回到默认宽度
   document.body.classList.add('panel-open');
   if (!keepScroll) setTimeout(function () { el.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' }); }, 240);
 }
@@ -412,6 +419,25 @@ function close() {
   sel = null; openId = null;
 }
 document.getElementById('close').onclick = close;
+
+// 拖动卡片左边缘调整宽度：窄到 360px，宽到只给树留 120px；双击恢复默认宽度
+var resizing = false, resizeEl = document.getElementById('resize');
+resizeEl.addEventListener('mousedown', function (e) {
+  if (e.button !== 0) return;
+  e.preventDefault();
+  resizing = true;
+  document.body.classList.add('resizing');
+});
+resizeEl.addEventListener('dblclick', function () { document.body.style.removeProperty('--panel-w'); });
+window.addEventListener('mousemove', function (e) {
+  if (!resizing) return;
+  var w = Math.max(360, Math.min(window.innerWidth - 120, window.innerWidth - e.clientX));
+  document.body.style.setProperty('--panel-w', w + 'px');
+});
+window.addEventListener('mouseup', function () {
+  resizing = false;
+  document.body.classList.remove('resizing');
+});
 document.querySelector('main').onclick = function () { if (!(drag && drag.moved)) close(); };
 document.addEventListener('keydown', function (e) { if (e.key === 'Escape') close(); });
 
