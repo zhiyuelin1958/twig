@@ -99,14 +99,20 @@ function firstPage(it) {
 // 把文献信息填进模板：标题、一级标题、引文、pdf（相对 Twig 文件的路径）、firstPage
 // 替换值写成函数：标题里的 $$、$& 等在字符串替换值中是特殊记号，会被改掉
 function fill(template, it, pdf, twigFile) {
-  let rel = pdf ? path.relative(path.dirname(twigFile), pdf) : '';
-  if (path.isAbsolute(rel)) rel = pdf;                                // 不在同一个盘时用绝对路径
-  return template
+  return fillPdf(template, pdf, twigFile)
     .replace(/^title: .*$/m, () => 'title: ' + label(it) + ' Twig')
     .replace(/^# .*$/m, () => '# ' + label(it) + ' Twig')
     .replace(/^> 论文：.*$/m, () => '> 论文：' + citation(it))
-    .replace(/^pdf: .*$/m, () => 'pdf: ' + rel.split(path.sep).join('/'))
     .replace(/^firstPage: .*$/m, () => 'firstPage: ' + firstPage(it));
 }
 
-module.exports = { search, recent, folders, folderPapers, folderPaths, dataDir, pdfs, label, fileName, fill };
+// 只填 pdf：从 PDF 新建时用，firstPage 清空，标题、引文由 AI 读 PDF 后填
+function fillPdf(template, pdf, twigFile) {
+  let rel = pdf ? path.relative(path.dirname(twigFile), pdf) : '';
+  if (path.isAbsolute(rel)) rel = pdf;                                // 不在同一个盘时用绝对路径
+  return template
+    .replace(/^pdf: .*$/m, () => 'pdf: ' + rel.split(path.sep).join('/'))
+    .replace(/^firstPage: .*$/m, 'firstPage:');
+}
+
+module.exports = { search, recent, folders, folderPapers, folderPaths, dataDir, pdfs, label, fileName, fill, fillPdf };

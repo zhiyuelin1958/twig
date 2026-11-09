@@ -99,12 +99,13 @@ async function exportHtml(uri) {
   vscode.window.showInformationMessage('已导出 ' + path.basename(output) + note);
 }
 
-// 新建：先从 Zotero 选论文（也可选空白模板），自动填好标题、引文、pdf、firstPage，再选保存位置
+// 新建：先从 Zotero 选论文，自动填好标题、引文、pdf、firstPage，再选保存位置
+// 不用 Zotero 时可从 PDF 新建（只填 pdf），或用空白模板
 async function newTree() {
-  const picked = await pickPaper();                // undefined：取消；picked.item 为 null：空白模板
+  const picked = await pickPaper();                // undefined：取消；picked.item 为 null：从 PDF 新建或空白模板
   if (!picked) return;
   const item = picked.item;
-  const pdf = item ? await pickPdf(item) : '';
+  const pdf = item ? await pickPdf(item) : picked.fromPdf ? await choosePdf() : '';
   if (pdf === undefined) return;
   const folder = await twigFolder(item, pdf, picked.trail);
   if (folder === undefined) return;
@@ -126,13 +127,15 @@ async function newTree() {
 
   let text = fs.readFileSync(path.join(SKILL_SOURCE, '模板.md'), 'utf8');
   if (item) text = zotero.fill(text, item, pdf, target.fsPath);
+  else if (pdf) text = zotero.fillPdf(text, pdf, target.fsPath);
   fs.writeFileSync(target.fsPath, text);
   await vscode.window.showTextDocument(target);
   preview(target);
 }
 
 // Twig 文件放在哪：根目录下按 Zotero 分类建子文件夹，如 Twig阅读整理/大气科学文献1/2026暑假
-// 根目录取设置 twig.folder，没设时为 Zotero 数据目录旁的 Twig阅读整理；空白模板、推不出数据目录时用当前文件夹
+// 根目录取设置 twig.folder，没设时为 Zotero 数据目录旁的 Twig阅读整理；推不出数据目录时（如空白模板）用当前文件夹
+// 不是从 Zotero 选的论文，不分子文件夹，放在根目录
 // 子文件夹：浏览时点过的那条路径；搜到的论文按它所在的分类，在多个分类里时让用户选
 async function twigFolder(item, pdf, trail) {
   const editor = vscode.window.activeTextEditor;
@@ -161,16 +164,17 @@ async function twigFolder(item, pdf, trail) {
 // 选论文的搜索框，两种用法：
 // - 不输入时按文件夹逐层浏览：顶层列出文件夹和最近改动的 5 篇，点文件夹进入，“返回上一级”退出
 // - 输入标题、作者或年份时搜整个文献库；清空输入框回到原来所在的文件夹
-// 每篇论文一行：作者 (年份) 在前，标题在后；“空白模板”总在最下面
+// 每篇论文一行：作者 (年份) 在前，标题在后；“从 PDF 新建”“空白模板”总在最下面
 function pickPaper() {
   const separator = label => ({ label, kind: vscode.QuickPickItemKind.Separator });
   const paper = it => ({ label: zotero.label(it), description: it.data.title, alwaysShow: true, item: it });
+  const fromPdf = { label: '$(file-pdf) 从 PDF 新建', description: '只填 PDF 路径，引文等由 AI 读 PDF 后填', alwaysShow: true, item: null, fromPdf: true };
   const blank = { label: '$(file) 空白模板', alwaysShow: true, item: null };
-  const tail = [separator('不用 Zotero'), blank];
+  const tail = [separator('不用 Zotero'), fromPdf, blank];
   // 连不上 Zotero 时显示在列表顶部的说明，选中它不做任何事
   const notices = {
-    offline: { label: '$(info) 没有连上 Zotero', detail: '没装 Zotero 的话，直接选下面的空白模板；用 Zotero 的话，先打开它' },
-    disabled: { label: '$(info) Zotero 没有开放本地接口', detail: '在 Zotero 设置 → 高级 勾选“允许此计算机上的其他应用程序与 Zotero 通信”；或直接选下面的空白模板' }
+    offline: { label: '$(info) 没有连上 Zotero', detail: '没装 Zotero 的话，选下面的“从 PDF 新建”；用 Zotero 的话，先打开它' },
+    disabled: { label: '$(info) Zotero 没有开放本地接口', detail: '在 Zotero 设置 → 高级 勾选“允许此计算机上的其他应用程序与 Zotero 通信”；或选下面的“从 PDF 新建”' }
   };
   const box = vscode.window.createQuickPick();
   box.placeholder = '搜索 Zotero 文献（标题、作者、年份），或进入文件夹';
@@ -188,7 +192,7 @@ function pickPaper() {
     } catch (e) {
       if (id === latest) {
         box.items = [{ ...(notices[e.reason] || notices.offline), alwaysShow: true, notice: true }, ...tail];
-        box.activeItems = [blank];                 // 默认选中空白模板，回车直接新建
+        box.activeItems = [fromPdf];               // 默认选中“从 PDF 新建”，回车直接选 PDF
       }
     }
     if (id === latest) box.busy = false;
@@ -233,7 +237,7 @@ function pickPaper() {
         return;
       }
       // 浏览时点过的文件夹路径；搜到的论文不一定在当前文件夹里，路径留空，之后按论文所在分类定
-      resolve({ item: chosen.item, trail: box.value.trim() ? [] : trail.map(f => f.name) });
+      resolve({ item: chosen.item, fromPdf: chosen.fromPdf, trail: box.value.trim() ? [] : trail.map(f => f.name) });
       box.dispose();
     });
     box.onDidHide(() => { resolve(undefined); box.dispose(); });
@@ -252,6 +256,12 @@ async function pickPdf(item) {
     list.map(p => ({ label: path.basename(p.file), description: p.title, file: p.file })),
     { placeHolder: '这篇文献有多个 PDF，选正文那一个' });
   return chosen && chosen.file;
+}
+
+// 从 PDF 新建：弹出选文件框选一篇 PDF；取消时返回 undefined
+async function choosePdf() {
+  const files = await vscode.window.showOpenDialog({ filters: { PDF: ['pdf'] }, openLabel: '用这篇论文新建' });
+  return files && files[0].fsPath;
 }
 
 // 书写规则要写入用户家目录，所以第一次启动先询问；用户同意后，扩展升级或新装了某家 AI 时自动更新
