@@ -31,8 +31,9 @@
 | `skill/build.cjs` | 解析源文件（`parse`、`figurePages`）、检查格式（`check`）、生成页面（`toHtml`）；命令行和扩展共用 |
 | `skill/viewer.html` | 页面：样式和脚本，按注释标题分节（公式、跳转原文、行内格式、块级排版、画树、知识卡片、缩放）；KaTeX 版本在 `<head>` |
 | `extension.js` | 只放与 VSCode 交互的部分：命令、预览面板、新建时的搜索框、打开 PDF（`openPdf`）、按文献库分类整理文件夹（`syncFolders`）、安装 skill |
-| `library.js` | 文献库接口（各文献库模块导出哪些成员，写在文件开头）、按设置选文献库，以及与具体文献库无关的部分：文件名、把引文、`pdf`、文献编号、`firstPage` 填进模板；不用 vscode 接口 |
+| `library.js` | 文献库接口（各文献库模块导出哪些成员，写在文件开头）、按设置选文献库，以及与具体文献库无关的部分：引文格式、文件名、把引文、`pdf`、文献编号、`firstPage` 填进模板；不用 vscode 接口 |
 | `zotero.js` | Zotero 文献库：通过 Zotero 本地 API 列分类、搜索文献、取 PDF 路径和所在分类，推出数据目录和 Twig 文件对应的文献编号；不用 vscode 接口 |
+| `bibtex.js` | BibTeX 文献库：解析 `.bib` 文件的条目、JabRef 分组和 `file` 字段（兼容 JabRef 与 Zotero、Mendeley 等的导出写法）；只读，不改 `.bib`；不用 vscode 接口 |
 | `uninstall.js` | 卸载清理：删掉装进各家 AI 的规则文件，保留 `个人偏好.md`，跳过链接到仓库的目录 |
 
 - 新功能按职责放进对应文件，再放进文件中对应的一节；没有合适的节时新开一节并加注释标题。

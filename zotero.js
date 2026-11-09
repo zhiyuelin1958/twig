@@ -2,6 +2,7 @@
 // 本地 API 需要 Zotero 开着，并在 设置 → 高级 勾选“允许此计算机上的其他应用程序与 Zotero 通信”
 const path = require('path');
 const { fileURLToPath } = require('url');
+const library = require('./library.js');
 
 const API = 'http://localhost:23119/api/users/0';
 
@@ -26,8 +27,13 @@ const help = {
 
 // 统一的论文对象（见 library.js）；collections 为所在分类的编号，folderPaths 用
 function paper(it) {
-  return { key: it.key, authors: authors(it), year: year(it), title: it.data.title, citation: citation(it), firstPage: firstPage(it),
-    collections: it.data.collections || [] };
+  const d = it.data;
+  const names = (d.creators || []).filter(c => c.creatorType === 'author').map(c => c.lastName || c.name);
+  return {
+    key: it.key, authors: authors(it), year: year(it), title: d.title,
+    citation: library.citation({ names, year: year(it), title: d.title, venue: d.publicationTitle, volume: d.volume, pages: d.pages }),
+    firstPage: library.firstPage(d.pages), collections: d.collections || []
+  };
 }
 
 // 只要文献条目，去掉独立附件和笔记
@@ -146,25 +152,6 @@ function year(it) { return (it.meta.parsedDate || it.data.date || '').slice(0, 4
 
 // 作者简称，如 Morrison 等、Morrison和Milbrandt；由 Zotero 生成，随 Zotero 界面语言。去掉其中不可见的方向控制符
 function authors(it) { return (it.meta.creatorSummary || '作者').replace(/[⁦-⁩]/g, ''); }
-
-// 完整引文，如 Morrison, Thompson & Tatarskii (2009). 题目. *Monthly Weather Review*, 137, 991–1007.
-// 作者超过 3 位时写成“第一作者 et al.”
-function citation(it) {
-  const d = it.data;
-  const names = d.creators.filter(c => c.creatorType === 'author').map(c => c.lastName || c.name);
-  const authors = names.length > 3 ? names[0] + ' et al.'
-    : names.length > 1 ? names.slice(0, -1).join(', ') + ' & ' + names[names.length - 1]
-    : names[0] || '作者';
-  const where = [d.publicationTitle && '*' + d.publicationTitle + '*', d.volume, d.pages && d.pages.replace('-', '–')]
-    .filter(Boolean).join(', ');
-  return authors + ' (' + year(it) + '). ' + d.title + '.' + (where ? ' ' + where + '.' : '');
-}
-
-// 页码字段的起始页，如 991-1007 → 991；没有页码或是文章编号（如 e2023GL…）时为 1
-function firstPage(it) {
-  const m = (it.data.pages || '').match(/^\s*(\d+)/);
-  return m ? +m[1] : 1;
-}
 
 module.exports = {
   name, field, help, search, recent, item, folders, folderPapers, collections, folderPaths, home, paperKey, pdfs

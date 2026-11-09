@@ -14,13 +14,30 @@
 //   home(pdf)            没开工作区时 Twig阅读整理 放在哪个文件夹下 → 路径 | null
 //   paperKey(meta, file) Twig 文件对应的文献编号 → 编号 | null
 //   pdfs(key)            一篇文献的全部 PDF → [{ title, file }]，file 为本地绝对路径
-// 论文：{ key, authors, year, title, citation, firstPage }，authors 为作者简称（如 Morrison 等），citation 为完整引文
+// 论文：{ key, authors, year, title, citation, firstPage }，authors 为作者简称（如 Morrison 等），citation 为完整引文（见 citation）
 const path = require('path');
-const zotero = require('./zotero.js');
 
-// 按设置 twig.library 取文献库
-function open(kind) {
-  return zotero;
+// 按设置 twig.library 取文献库；options.bibFile 为 bibtex 用的 .bib 文件（绝对路径）
+// 各文献库模块要用本文件的 citation 等，所以在这里用到时才加载，避免互相引用
+function open(kind, options = {}) {
+  if (kind === 'bibtex') return require('./bibtex.js').open(options.bibFile);
+  return require('./zotero.js');
+}
+
+// 完整引文，如 Morrison, Thompson & Tatarskii (2009). 题目. *Monthly Weather Review*, 137, 991–1007.
+// names 为作者姓氏列表，超过 3 位或 etal（作者列表本身写了“等”）时写成“第一作者 et al.”
+function citation({ names, etal, year, title, venue, volume, pages }) {
+  const authors = names.length > 3 || (etal && names.length) ? names[0] + ' et al.'
+    : names.length > 1 ? names.slice(0, -1).join(', ') + ' & ' + names[names.length - 1]
+    : names[0] || '作者';
+  const where = [venue && '*' + venue + '*', volume, pages && pages.replace(/-+/, '–')].filter(Boolean).join(', ');
+  return authors + ' (' + year + '). ' + title + '.' + (where ? ' ' + where + '.' : '');
+}
+
+// 页码字段的起始页，如 991-1007 → 991；没有页码或是文章编号（如 e2023GL…）时为 1
+function firstPage(pages) {
+  const m = (pages || '').match(/^\s*(\d+)/);
+  return m ? +m[1] : 1;
 }
 
 // 作者简称与年份，如 Morrison 等 (2009)
@@ -65,4 +82,4 @@ function pdfPath(pdf, twigFile) {
   return rel.split(path.sep).join('/');
 }
 
-module.exports = { open, label, fileName, setKey, fill, fillPdf, pdfPath };
+module.exports = { open, citation, firstPage, label, fileName, setKey, fill, fillPdf, pdfPath };

@@ -100,9 +100,21 @@ async function exportHtml(uri) {
   vscode.window.showInformationMessage('已导出 ' + path.basename(output) + note);
 }
 
-// 当前文献库，按设置 twig.library 取
+// 当前文献库，按设置 twig.library 取；用 .bib 文件时，twig.bibFile 写相对路径的按当前工作区解析
 function currentLibrary() {
-  return library.open(vscode.workspace.getConfiguration('twig').get('library'));
+  const config = vscode.workspace.getConfiguration('twig');
+  let bibFile = config.get('bibFile');
+  if (bibFile && !path.isAbsolute(bibFile)) {
+    const ws = currentWorkspace();
+    bibFile = ws ? path.join(ws.uri.fsPath, bibFile) : '';
+  }
+  return library.open(config.get('library'), { bibFile });
+}
+
+// 当前工作区：当前文件所在的那个，否则第一个；没开工作区时为空
+function currentWorkspace() {
+  const editor = vscode.window.activeTextEditor;
+  return (editor && vscode.workspace.getWorkspaceFolder(editor.document.uri)) || (vscode.workspace.workspaceFolders || [])[0];
 }
 
 // 新建：先从文献库选论文，自动填好标题、引文、pdf、firstPage，再选保存位置
@@ -175,8 +187,7 @@ async function twigFolder(lib, item, pdf, trail) {
 async function twigRoot(lib, pdf) {
   const setting = vscode.workspace.getConfiguration('twig').get('folder');
   if (setting) return setting;
-  const editor = vscode.window.activeTextEditor;
-  const ws = (editor && vscode.workspace.getWorkspaceFolder(editor.document.uri)) || (vscode.workspace.workspaceFolders || [])[0];
+  const ws = currentWorkspace();
   if (ws) return path.join(ws.uri.fsPath, 'Twig阅读整理');
   let home = null;
   try { home = lib && await lib.home(pdf); } catch (e) { }   // 文献库连不上时当作推不出

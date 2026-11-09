@@ -81,6 +81,18 @@
           "type": "string",
           "default": "",
           "description": "Twig 文件的根目录。从文献库新建的，其下按文献库的分类建子文件夹。"
+        },
+        "twig.library": {
+          "type": "string",
+          "enum": ["zotero", "bibtex"],
+          "enumDescriptions": ["Zotero（需要 Zotero 7 以上开着，并开放本地接口）", "一个 .bib 文件（JabRef 维护的，或 Zotero、EndNote 等导出的），在 twig.bibFile 填路径"],
+          "default": "zotero",
+          "description": "新建 Twig 和整理文件夹时用哪个文献库。"
+        },
+        "twig.bibFile": {
+          "type": "string",
+          "default": "",
+          "description": "twig.library 为 bibtex 时用的 .bib 文件；相对路径按当前工作区解析。分类取 JabRef 的分组，PDF 取条目的 file 字段。"
         }
       }
     }
