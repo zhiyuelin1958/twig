@@ -1,10 +1,10 @@
-// Twig VSCode 扩展：预览 *_twig.md、导出 HTML、新建（可从 Zotero 取文献信息）、按 Zotero 分类整理文件夹、把 AI 书写规则装成各家 AI 的 skill
+// Twig VSCode 扩展：预览 *_twig.md、导出 HTML、新建（可从文献库取文献信息）、按文献库分类整理文件夹、把 AI 书写规则装成各家 AI 的 skill
 const vscode = require('vscode');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const tree = require('./skill/build.cjs');
-const zotero = require('./zotero.js');
+const library = require('./library.js');
 
 const SKILL_SOURCE = path.join(__dirname, 'skill');
 // 各家 AI 读取个人 skill 的目录。Copilot 也读 ~/.claude/skills，所以不再单独装。与 uninstall.js 中的 AI_HOMES 相同
@@ -100,15 +100,21 @@ async function exportHtml(uri) {
   vscode.window.showInformationMessage('已导出 ' + path.basename(output) + note);
 }
 
-// 新建：先从 Zotero 选论文，自动填好标题、引文、pdf、firstPage，再选保存位置
-// 不用 Zotero 时可从 PDF 新建（只填 pdf），或用空白模板
+// 当前文献库，按设置 twig.library 取
+function currentLibrary() {
+  return library.open(vscode.workspace.getConfiguration('twig').get('library'));
+}
+
+// 新建：先从文献库选论文，自动填好标题、引文、pdf、firstPage，再选保存位置
+// 不用文献库时可从 PDF 新建（只填 pdf），或用空白模板
 async function newTree() {
-  const picked = await pickPaper();                // undefined：取消；picked.item 为 null：从 PDF 新建或空白模板
+  const lib = currentLibrary();
+  const picked = await pickPaper(lib);             // undefined：取消；picked.item 为 null：从 PDF 新建或空白模板
   if (!picked) return;
   const item = picked.item;
-  const pdf = item ? await pickPdf(item) : picked.fromPdf ? await choosePdf() : '';
+  const pdf = item ? await pickPdf(lib, item) : picked.fromPdf ? await choosePdf() : '';
   if (pdf === undefined) return;
-  const folder = await twigFolder(item, pdf, picked.trail);
+  const folder = await twigFolder(lib, item, pdf, picked.trail);
   if (folder === undefined) return;
 
   // 先建好文件夹，保存对话框才能定位过去；取消时删掉刚建的空文件夹
@@ -116,7 +122,7 @@ async function newTree() {
   while (!fs.existsSync(existing)) existing = path.dirname(existing);
   fs.mkdirSync(folder, { recursive: true });
   const number = fs.readdirSync(folder).filter(f => f.endsWith('_twig.md')).length + 1;   // 编号按已有文件顺延
-  const name = item ? zotero.fileName(item, number) : String(number).padStart(2, '0') + '_作者年份_twig.md';
+  const name = item ? library.fileName(item, number) : String(number).padStart(2, '0') + '_作者年份_twig.md';
   const target = await vscode.window.showSaveDialog({
     defaultUri: vscode.Uri.file(path.join(folder, name)),
     filters: { Markdown: ['md'] }
@@ -127,22 +133,22 @@ async function newTree() {
   }
 
   let text = fs.readFileSync(path.join(SKILL_SOURCE, '模板.md'), 'utf8');
-  if (item) text = zotero.fill(text, item, pdf, target.fsPath);
-  else if (pdf) text = zotero.fillPdf(text, pdf, target.fsPath);
+  if (item) text = library.fill(text, lib, item, pdf, target.fsPath);
+  else if (pdf) text = library.fillPdf(text, pdf, target.fsPath);
   fs.writeFileSync(target.fsPath, text);
   await vscode.window.showTextDocument(target);
   preview(target);
 }
 
-// Twig 文件放在哪：根目录下按 Zotero 分类建子文件夹，如 Twig阅读整理/大气科学文献1/2026暑假
-// 根目录见 twigRoot；取不到时（没开工作区又不是 Zotero 里的 PDF）用当前文件夹
-// 不是从 Zotero 选的论文：当前文件夹在根目录之下（如正开着同一主题的 Twig 文件）时用当前文件夹，否则用根目录
+// Twig 文件放在哪：根目录下按文献库分类建子文件夹，如 Twig阅读整理/大气科学文献1/2026暑假
+// 根目录见 twigRoot；取不到时（没开工作区，又推不出文献库的位置）用当前文件夹
+// 不是从文献库选的论文：当前文件夹在根目录之下（如正开着同一主题的 Twig 文件）时用当前文件夹，否则用根目录
 // 子文件夹：浏览时点过的那条路径；搜到的论文按它所在的分类，在多个分类里时让用户选
-async function twigFolder(item, pdf, trail) {
+async function twigFolder(lib, item, pdf, trail) {
   const editor = vscode.window.activeTextEditor;
   const current = editor ? path.dirname(editor.document.uri.fsPath)
     : (vscode.workspace.workspaceFolders || [])[0]?.uri.fsPath || os.homedir();
-  const root = twigRoot(pdf && zotero.dataDir(pdf));
+  const root = await twigRoot(item || pdf ? lib : null, pdf);
   if (!root) return current;
   if (!item) {
     const rel = path.relative(root, current);
@@ -151,7 +157,7 @@ async function twigFolder(item, pdf, trail) {
 
   let names = trail;
   if (!names.length) {
-    const paths = await zotero.folderPaths(item);
+    const paths = await lib.folderPaths(item);
     if (paths.length > 1) {
       const chosen = await vscode.window.showQuickPick(paths.map(p => ({ label: p.join(' › '), names: p })),
         { placeHolder: '这篇论文在多个分类里，选 Twig 文件放在哪个文件夹' });
@@ -165,17 +171,19 @@ async function twigFolder(item, pdf, trail) {
 }
 
 // Twig 文件的根目录，依次取：设置 twig.folder；工作区（当前文件所在的那个，否则第一个）下的 Twig阅读整理；
-// 没开工作区时为 Zotero 数据目录旁的 Twig阅读整理；都没有时为空
-function twigRoot(dataDir) {
+// 没开工作区时为文献库旁的 Twig阅读整理（见各文献库的 home；不给 lib 时不取）；都没有时为空
+async function twigRoot(lib, pdf) {
   const setting = vscode.workspace.getConfiguration('twig').get('folder');
   if (setting) return setting;
   const editor = vscode.window.activeTextEditor;
   const ws = (editor && vscode.workspace.getWorkspaceFolder(editor.document.uri)) || (vscode.workspace.workspaceFolders || [])[0];
   if (ws) return path.join(ws.uri.fsPath, 'Twig阅读整理');
-  return dataDir && path.join(path.dirname(dataDir), 'Twig阅读整理');
+  let home = null;
+  try { home = lib && await lib.home(pdf); } catch (e) { }   // 文献库连不上时当作推不出
+  return home && path.join(home, 'Twig阅读整理');
 }
 
-// Zotero 分类对应的文件夹，names 为从顶层往下的分类名；去掉文件夹名里不允许的字符
+// 文献库分类对应的文件夹，names 为从顶层往下的分类名；去掉文件夹名里不允许的字符
 function categoryDir(root, names) {
   return path.join(root, ...names.map(n => n.replace(/[\\/:*?"<>|]/g, '_')));
 }
@@ -184,19 +192,19 @@ function categoryDir(root, names) {
 // - 不输入时按文件夹逐层浏览：顶层列出文件夹和最近改动的 5 篇，点文件夹进入，“返回上一级”退出
 // - 输入标题、作者或年份时搜整个文献库；清空输入框回到原来所在的文件夹
 // 每篇论文一行：作者 (年份) 在前，标题在后；“从 PDF 新建”“空白模板”总在最下面
-function pickPaper() {
+function pickPaper(lib) {
   const separator = label => ({ label, kind: vscode.QuickPickItemKind.Separator });
-  const paper = it => ({ label: zotero.label(it), description: it.data.title, alwaysShow: true, item: it });
+  const paper = p => ({ label: library.label(p), description: p.title, alwaysShow: true, item: p });
   const fromPdf = { label: '$(file-pdf) 从 PDF 新建', description: '只填 PDF 路径，引文等由 AI 读 PDF 后填', alwaysShow: true, item: null, fromPdf: true };
   const blank = { label: '$(file) 空白模板', alwaysShow: true, item: null };
-  const tail = [separator('不用 Zotero'), fromPdf, blank];
-  // 连不上 Zotero 时显示在列表顶部的说明，选中它不做任何事
-  const notices = {
-    offline: { label: '$(info) 没有连上 Zotero', detail: '没装 Zotero 的话，选下面的“从 PDF 新建”；用 Zotero 的话，先打开它' },
-    disabled: { label: '$(info) Zotero 没有开放本地接口', detail: '在 Zotero 设置 → 高级 勾选“允许此计算机上的其他应用程序与 Zotero 通信”；或选下面的“从 PDF 新建”' }
+  const tail = [separator('不用 ' + lib.name), fromPdf, blank];
+  // 连不上文献库时显示在列表顶部的说明（文字见各文献库的 help），选中它不做任何事
+  const notice = reason => {
+    const h = lib.help[reason] || Object.values(lib.help)[0];
+    return { label: '$(info) ' + h.label, detail: h.detail + '；或选下面的“从 PDF 新建”', alwaysShow: true, notice: true };
   };
   const box = vscode.window.createQuickPick();
-  box.placeholder = '搜索 Zotero 文献（标题、作者、年份），或进入文件夹';
+  box.placeholder = '搜索 ' + lib.name + ' 文献（标题、作者、年份），或进入文件夹';
   box.items = tail;
   const trail = [];                                // 当前所在的文件夹，从顶层往下
   let timer, latest = 0;
@@ -210,7 +218,7 @@ function pickPaper() {
       if (id === latest) box.items = [...items, ...tail];
     } catch (e) {
       if (id === latest) {
-        box.items = [{ ...(notices[e.reason] || notices.offline), alwaysShow: true, notice: true }, ...tail];
+        box.items = [notice(e.reason), ...tail];
         box.activeItems = [fromPdf];               // 默认选中“从 PDF 新建”，回车直接选 PDF
       }
     }
@@ -219,14 +227,14 @@ function pickPaper() {
 
   function browse() {
     const here = trail[trail.length - 1];
-    box.title = here ? trail.map(f => f.name).join(' › ') : 'Zotero 文献库';
+    box.title = here ? trail.map(f => f.name).join(' › ') : lib.name + ' 文献库';
     show(async () => {
-      const folders = (await zotero.folders(here && here.key)).map(f => ({
+      const folders = (await lib.folders(here && here.key)).map(f => ({
         label: '$(folder) ' + f.name,
         description: [f.folders && f.folders + ' 个子文件夹', f.papers && f.papers + ' 篇'].filter(Boolean).join(' · '),   // 数量为 0 的不显示
         alwaysShow: true, folder: f
       }));
-      const list = here ? await zotero.folderPapers(here.key) : await zotero.recent(5);
+      const list = here ? await lib.folderPapers(here.key) : await lib.recent(5);
       return [
         ...(here ? [{ label: '$(arrow-left) 返回上一级', alwaysShow: true, back: true }] : []),
         ...folders,
@@ -240,7 +248,7 @@ function pickPaper() {
     timer = setTimeout(() => {
       if (!q.trim()) return browse();
       box.title = '搜索整个文献库';
-      show(async () => (await zotero.search(q)).map(paper));
+      show(async () => (await lib.search(q)).map(paper));
     }, 300);
   });
   browse();
@@ -264,12 +272,17 @@ function pickPaper() {
 }
 
 // 一篇文献有多个 PDF（如正文和补充材料）时让用户选；没有 PDF 时 pdf 一项留空
-async function pickPdf(item) {
-  const list = await zotero.pdfs(item.key);
+async function pickPdf(lib, item) {
+  const list = await lib.pdfs(item.key);
   if (list.length === 0) {
-    vscode.window.showWarningMessage('这篇文献在 Zotero 里没有 PDF，pdf 一项留空，可以之后自己填。');
+    vscode.window.showWarningMessage('这篇文献在 ' + lib.name + ' 里没有 PDF，pdf 一项留空，可以之后自己填。');
     return '';
   }
+  return choosePdfOf(list);
+}
+
+// 一篇文献的多个 PDF 里选一个（只有一个时直接用它）；取消时返回 undefined
+async function choosePdfOf(list) {
   if (list.length === 1) return list[0].file;
   const chosen = await vscode.window.showQuickPick(
     list.map(p => ({ label: path.basename(p.file), description: p.title, file: p.file })),
@@ -283,18 +296,18 @@ async function choosePdf() {
   return files && files[0].fsPath;
 }
 
-// 整理文件夹：Zotero 里分类改名、移动，或论文换了分类后，把 Twig 文件移到论文现在所在分类的文件夹
-// 同一前缀的文件（如 01_Morrison等2009_提问清单.md、导出的 .html）一起移；移动后改写 pdf 的相对路径，没写 zotero 编号的补上
-// 不动的：已在论文所在的某个分类文件夹里的；对应不上 Zotero 文献、文献已删除或不在任何分类里的，列在结果里
+// 整理文件夹：文献库里分类改名、移动，或论文换了分类后，把 Twig 文件移到论文现在所在分类的文件夹
+// 同一前缀的文件（如 01_Morrison等2009_提问清单.md、导出的 .html）一起移；移动后改写 pdf 的相对路径，没写文献编号的补上
+// 不动的：已在论文所在的某个分类文件夹里的；对应不上文献库里的文献、文献已删除或不在任何分类里的，列在结果里
 async function syncFolders() {
+  const lib = currentLibrary();
   let plan;
   try {
     plan = await vscode.window.withProgress(
-      { location: vscode.ProgressLocation.Notification, title: 'Twig：对照 Zotero 分类' }, planMoves);
+      { location: vscode.ProgressLocation.Notification, title: 'Twig：对照 ' + lib.name + ' 分类' }, () => planMoves(lib));
   } catch (e) {
-    vscode.window.showWarningMessage(e.reason
-      ? '整理文件夹需要 Zotero 开着，并在 Zotero 设置 → 高级 勾选“允许此计算机上的其他应用程序与 Zotero 通信”'
-      : e.message);
+    const h = e.reason && (lib.help[e.reason] || Object.values(lib.help)[0]);
+    vscode.window.showWarningMessage(h ? '整理文件夹需要读取 ' + lib.name + '：' + h.label + '。' + h.detail : e.message);
     return;
   }
   const { root, moves, skipped } = plan;
@@ -312,10 +325,10 @@ async function syncFolders() {
       label: path.basename(m.file),
       description: path.relative(root, path.dirname(m.file)) + ' → ' + path.relative(root, m.to),
       picked: true, move: m
-    })), { canPickMany: true, placeHolder: '按 Zotero 分类移动这些 Twig 文件（同一前缀的提问清单、参考答案一起移）' });
+    })), { canPickMany: true, placeHolder: '按 ' + lib.name + ' 分类移动这些 Twig 文件（同一前缀的提问清单、参考答案一起移）' });
     if (!picked) return;
     for (const { move } of picked) {
-      const problem = await moveTwig(move, root);
+      const problem = await moveTwig(move, root, lib.field);
       if (problem) skipped.push(path.relative(root, move.file) + '：' + problem);
       else moved++;
     }
@@ -326,28 +339,28 @@ async function syncFolders() {
 }
 
 // 找出根目录下要移动的 Twig 文件：{ root, moves: [{ file, key, label, dirs }], skipped }，dirs 为论文所在各分类的文件夹
-async function planMoves() {
-  const root = twigRoot(await zotero.libraryDir());
+async function planMoves(lib) {
+  const root = await twigRoot(lib);
   if (!root || !fs.existsSync(root)) throw new Error('找不到 Twig 文件的根目录' + (root ? '：' + root : '，请在设置里填 twig.folder'));
-  const all = await zotero.collections();
+  const all = await lib.collections();
   const moves = [], skipped = [];
   const files = fs.readdirSync(root, { recursive: true }).filter(f => f.endsWith('_twig.md')).map(f => path.join(root, f));
   for (const file of files) {
     const name = path.relative(root, file);
-    const key = await zotero.paperKey(tree.parse(fs.readFileSync(file, 'utf8')), file);
-    const it = key && await zotero.item(key);
-    if (!it) { skipped.push(name + '：' + (key ? 'Zotero 里已删除这篇文献' : '对应不到 Zotero 里的文献')); continue; }
-    const dirs = (await zotero.folderPaths(it, all)).map(names => categoryDir(root, names));
+    const key = await lib.paperKey(tree.parse(fs.readFileSync(file, 'utf8')), file);
+    const p = key && await lib.item(key);
+    if (!p) { skipped.push(name + '：' + (key ? lib.name + ' 里已删除这篇文献' : '对应不到 ' + lib.name + ' 里的文献')); continue; }
+    const dirs = (await lib.folderPaths(p, all)).map(names => categoryDir(root, names));
     if (!dirs.length) { skipped.push(name + '：这篇文献不在任何分类里'); continue; }
     if (dirs.some(d => samePath(d, path.dirname(file)))) continue;
-    moves.push({ file, key: it.key, label: zotero.label(it), dirs });
+    moves.push({ file, key: p.key, label: library.label(p), dirs });
   }
   return { root, moves, skipped };
 }
 
 // 移动一篇 Twig 及同一前缀的文件到 m.to；返回没移动的原因，移好时返回空
-// 编号在目标文件夹里已被占用时顺延，提问清单、参考答案第一行标题里的编号跟着改
-async function moveTwig(m, root) {
+// 编号在目标文件夹里已被占用时顺延，提问清单、参考答案第一行标题里的编号跟着改；field 为文献库存编号的元信息字段
+async function moveTwig(m, root, field) {
   const from = path.dirname(m.file);
   const prefix = path.basename(m.file).slice(0, -'twig.md'.length);         // 如 01_Morrison等2009_
   const group = fs.readdirSync(from).filter(f => f.startsWith(prefix));
@@ -374,11 +387,8 @@ async function moveTwig(m, root) {
   const twig = target(path.basename(m.file));
   let text = fs.readFileSync(twig, 'utf8');
   const meta = tree.parse(text);
-  if (meta.pdf) text = text.replace(/^pdf:.*$/m, () => 'pdf: ' + zotero.pdfPath(path.resolve(from, meta.pdf), twig));
-  if (!meta.zotero) {
-    text = /^zotero:.*$/m.test(text) ? text.replace(/^zotero:.*$/m, () => 'zotero: ' + m.key)
-      : text.replace(/^pdf:.*$/m, line => line + '\nzotero: ' + m.key);
-  }
+  if (meta.pdf) text = text.replace(/^pdf:.*$/m, () => 'pdf: ' + library.pdfPath(path.resolve(from, meta.pdf), twig));
+  if (!meta[field]) text = library.setKey(text, field, m.key);
   fs.writeFileSync(twig, text);
   if (renumber) {
     for (const f of group.filter(f => f.endsWith('.md') && !f.endsWith('twig.md'))) {

@@ -39,7 +39,7 @@
       },
       {
         "command": "twig.syncFolders",
-        "title": "按 Zotero 分类整理文件夹",
+        "title": "按文献库分类整理文件夹",
         "category": "Twig"
       },
       {
@@ -80,7 +80,7 @@
         "twig.folder": {
           "type": "string",
           "default": "",
-          "description": "Twig 文件的根目录。从 Zotero 新建的，其下按 Zotero 分类建子文件夹。"
+          "description": "Twig 文件的根目录。从文献库新建的，其下按文献库的分类建子文件夹。"
         }
       }
     }
