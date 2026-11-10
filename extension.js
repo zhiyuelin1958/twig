@@ -54,13 +54,44 @@ async function preview(uri) {
   panel.onDidDispose(() => panels.delete(key));
   panel.webview.onDidReceiveMessage(m => {
     if (m.page || m.ref) openPdf(uri, m.page, m.search, m.ref);
-    if (m.url && /^https?:/.test(m.url)) vscode.env.openExternal(vscode.Uri.parse(m.url));   // 外部论文、网址：用浏览器打开
+    if (m.url) openLink(uri, m.url);
   });
 }
 
+// 卡片里的链接 [文字](地址)：网址用浏览器打开；其余是本机路径（相对 Twig 文件，或绝对路径），解析见 build.cjs 的 localLink
+// - PDF：用 PDF Viewer 打开，#page=5 跳到 PDF 第 5 页；没装 PDF Viewer 时用系统默认程序
+// - 文本文件（md、tex、py 等）：在旁边的编辑器打开，#L42 跳到第 42 行，Markdown 的 #标题 跳到该标题
+// - 其余（文件夹、docx、图片等）：用系统默认程序打开，文件夹在资源管理器中打开
+async function openLink(uri, target) {
+  if (!tree.isLocal(target)) {
+    vscode.env.openExternal(vscode.Uri.parse(target));
+    return;
+  }
+  const { file, anchor } = tree.localLink(target, uri.fsPath);
+  if (!fs.existsSync(file)) { vscode.window.showWarningMessage('找不到链接的本机文件：' + file); return; }
+  const external = () => vscode.env.openExternal(vscode.Uri.file(file));
+  if (fs.statSync(file).isDirectory()) return external();
+  if (/\.pdf$/i.test(file)) return hasPdfViewer() ? showPdf(file, +(anchor.match(/^page=(\d+)/) || [])[1] || 1) : external();
+  let doc;
+  try { doc = await vscode.workspace.openTextDocument(file); } catch (e) { return external(); }   // 二进制文件打不开为文本
+  let line = 0;
+  if (/^L\d+$/.test(anchor)) line = Math.min(+anchor.slice(1) - 1, doc.lineCount - 1);
+  else if (anchor) {
+    // 先找完全相同的标题，没有时取第一个以它开头的，如 #3.2 跳到“### 3.2 碰并：…”
+    const heading = anchor.trim();
+    const titles = doc.getText().split(/\r?\n/).map(l => (l.match(/^#{1,6}\s+(.*?)\s*$/) || [])[1]);
+    let found = titles.indexOf(heading);
+    if (found < 0) found = titles.findIndex(t => t !== undefined && t.startsWith(heading));
+    if (found >= 0) line = found;
+    else vscode.window.showInformationMessage('没找到标题“' + heading + '”，打开了文件开头');
+  }
+  const at = new vscode.Range(line, 0, line, 0);
+  const editor = await vscode.window.showTextDocument(doc, { viewColumn: vscode.ViewColumn.Beside, selection: at });
+  editor.revealRange(at, vscode.TextEditorRevealType.AtTop);
+}
+
 // 点卡片里的页码或图表：用 PDF Viewer 扩展打开元信息 pdf 指向的论文，并跳到对应页
-// 期刊页码减去 firstPage（PDF 第 1 页对应的期刊页码）再加 1，得到 PDF 页码
-// 带引文 p.xxx「…」时，让 PDF Viewer 里的 pdf.js 从该页起搜索这句原文并高亮，定位到行
+// 期刊页码减去 firstPage（PDF 第 1 页对应的期刊页码）再加 1，得到 PDF 页码；带引文 p.xxx「…」时定位到这句原文所在的行（见 showPdf）
 // ref 是元信息 refs 中的论文名字（点【论文】标签）：改开那篇登记的本机 PDF，按它的第 1 页期刊页码换算；没有 page 时打开第 1 页
 async function openPdf(uri, page, search, ref) {
   const doc = await vscode.workspace.openTextDocument(uri);
@@ -70,7 +101,7 @@ async function openPdf(uri, page, search, ref) {
     const r = meta.refs[ref];
     if (!r) return;
     file = r.pdf ? path.resolve(path.dirname(uri.fsPath), r.pdf) : '';
-    if (!file || !fs.existsSync(file) || !vscode.extensions.getExtension('mathematic.vscode-pdf')) {
+    if (!file || !fs.existsSync(file) || !hasPdfViewer()) {
       const why = file && !fs.existsSync(file) ? '找不到 ' + ref + ' 的本机 PDF：' + file : '打开本机 PDF 需要安装 PDF Viewer 扩展（mathematic.vscode-pdf）';
       if (r.url) { vscode.window.showInformationMessage(why + '，改在浏览器打开'); vscode.env.openExternal(vscode.Uri.parse(r.url)); }
       else vscode.window.showWarningMessage(why);
@@ -78,7 +109,7 @@ async function openPdf(uri, page, search, ref) {
     }
     first = r.firstPage;
   } else {
-    if (!vscode.extensions.getExtension('mathematic.vscode-pdf')) {
+    if (!hasPdfViewer()) {
       vscode.window.showWarningMessage('跳转原文需要安装 PDF Viewer 扩展（mathematic.vscode-pdf）');
       return;
     }
@@ -86,9 +117,14 @@ async function openPdf(uri, page, search, ref) {
     if (!file) return;
     first = Number(meta.firstPage);
   }
-  const pdfPage = page ? page - (first || 1) + 1 : 1;
+  await showPdf(file, page ? page - (first || 1) + 1 : 1, search);
+}
 
-  // 同一篇 PDF 已打开时，PDF Viewer 不会按新页码跳转，所以先关掉旧标签页，在原位置重新打开
+function hasPdfViewer() { return !!vscode.extensions.getExtension('mathematic.vscode-pdf'); }
+
+// 用 PDF Viewer 打开 PDF 第 pdfPage 页；给出 search 时让 pdf.js 从该页起搜索这句原文并高亮
+// 同一篇 PDF 已打开时，PDF Viewer 不会按新页码跳转，所以先关掉旧标签页，在原位置重新打开
+async function showPdf(file, pdfPage, search) {
   let column = vscode.ViewColumn.Beside;
   for (const group of vscode.window.tabGroups.all) {
     for (const tab of group.tabs) {
@@ -132,7 +168,7 @@ async function exportHtml(uri) {
   const data = tree.parse(doc.getText());
   const output = uri.fsPath.replace(/\.md$/, '.html');
   fs.writeFileSync(output, tree.toHtml(data));
-  const problems = tree.check(data);
+  const problems = tree.check(data, uri.fsPath);
   const note = problems.length ? `（${problems.length} 处问题：${problems.join('；')}）` : '';
   vscode.window.showInformationMessage('已导出 ' + path.basename(output) + note);
 }

@@ -261,7 +261,21 @@ function pages(s) {
 
 function esc(s) { return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
 function short(n) { return n.label.split('：')[0]; }
-// 处理顺序：转义 → 代码、公式先暂存 → [文字](#节点id) 卡片链接 → [文字](网址) → **加粗** → *斜体* → 页码与图表
+// 链接 [文字](地址)，地址含空格或括号时写成 [文字](<地址>)（此时已转义成 &lt;…&gt;）；与 build.cjs 中的 LINK 相同
+var LINK = /\[([^\]]+)\]\((?:&lt;(.+?)&gt;|([^)\s]+))\)/g;
+// 地址是网址（https:、mailto: 等）还是本机路径；E:/… 这样的盘符路径算本机路径。与 build.cjs 中的 isLocal 相同
+function isLocal(target) {
+  return !target.startsWith('#') && (!/^[a-z][\w+.-]*:/i.test(target) || /^[a-z]:[\\/]/i.test(target) || /^file:/i.test(target));
+}
+// 预览中由扩展按原样的地址打开（见 extension.js 的 openLink）；导出的网页里交给浏览器，盘符路径改成 file:///
+// 指向不存在节点的 #id 已在卡片链接一步处理，这里剩下的 #… 只显示文字
+function extLink(text, target) {
+  if (target.startsWith('#')) return text;
+  var local = isLocal(target);
+  var href = local && /^[a-z]:[\\/]/i.test(target) ? 'file:///' + target.replace(/\\/g, '/') : target;
+  return '<a class="ext" href="' + attr(href) + '" target="_blank" title="' + (local ? '打开本机文件 ' : '在浏览器打开 ') + attr(target) + '">' + text + '</a>';
+}
+// 处理顺序：转义 → 代码、公式先暂存 → [文字](#节点id) 卡片链接 → [文字](地址) 也暂存，地址不受后面几步影响 → **加粗** → *斜体* → 页码与图表
 function inline(s, linked) {
   var keep = [];
   function stash(h) { keep.push(h); return '\u0000' + (keep.length - 1) + '\u0000'; }
@@ -273,11 +287,12 @@ function inline(s, linked) {
       linked[id] = true;
       return '<a class="link" data-id="' + id + '">' + text + '</a>';
     })
-    .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, '<a class="ext" href="$2" target="_blank">$1</a>')
+    .replace(LINK, function (_, text, angled, plain) { return stash(extLink(text, angled || plain)); })
     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
     .replace(/\*([^*\s][^*]*?)\*/g, '<em>$1</em>');
   s = pages(s);                                                        // 正文任何位置的页码与图表
-  return s.replace(/\u0000(\d+)\u0000/g, function (_, i) { return keep[i]; });
+  function restore(h) { return h.replace(/\u0000(\d+)\u0000/g, function (_, i) { return restore(keep[i]); }); }   // 链接文字里可能还有暂存的公式
+  return restore(s);
 }
 
 /* ---------- 块级排版（Markdown 子集） ---------- */
@@ -462,9 +477,9 @@ document.getElementById('panel').addEventListener('click', function (e) {   // �
   var pg = e.target.closest('[data-page]');
   if (pg) vscodeApi.postMessage({ page: +pg.dataset.page, search: pg.dataset.search, ref: pg.dataset.ref });   // 交给扩展打开 PDF
   var ext = e.target.closest('a.ext');
-  if (ext && vscodeApi) {                                              // 预览里交给扩展：有本机 PDF 的论文打开 PDF，其余用浏览器打开
+  if (ext && vscodeApi) {                                              // 预览里交给扩展：有本机 PDF 的论文打开 PDF，其余按原样的地址打开网址或本机文件
     e.preventDefault();
-    vscodeApi.postMessage(ext.dataset.ref ? { ref: ext.dataset.ref } : { url: ext.href });
+    vscodeApi.postMessage(ext.dataset.ref ? { ref: ext.dataset.ref } : { url: ext.getAttribute('href') });
   }
 });
 function close() {

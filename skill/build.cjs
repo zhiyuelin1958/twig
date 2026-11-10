@@ -85,8 +85,23 @@ function figureRefs(text) {
   return keys;
 }
 
+// 卡片里的链接 [文字](地址)，地址含空格或括号时写成 [文字](<地址>)；与 viewer.html 中的 LINK 相同（那边是转义后的 &lt;…&gt;）
+const LINK = /\[([^\]]+)\]\((?:<(.+?)>|([^)\s]+))\)/g;
+// 本机路径：不是 #节点id，也不是 https:、mailto: 这类网址；E:/… 这样的盘符路径算本机路径。与 viewer.html 中的 isLocal 相同，扩展打开链接时共用
+function isLocal(target) {
+  return !target.startsWith('#') && (!/^[a-z][\w+.-]*:/i.test(target) || /^[a-z]:[\\/]/i.test(target) || /^file:/i.test(target));
+}
+// 本机路径 → { file: 绝对路径, anchor: # 后的部分 }；相对路径按 Twig 文件所在文件夹解析，file:/// 和 %20 这类编码照常识别。扩展打开链接时共用
+function localLink(target, twigFile) {
+  const decode = s => { try { return decodeURIComponent(s); } catch (e) { return s; } };
+  const i = target.indexOf('#');
+  const p = decode(i < 0 ? target : target.slice(0, i)).replace(/^file:\/*(?=[a-z]:)/i, '').replace(/^file:\/\//i, '');
+  return { file: path.resolve(path.dirname(twigFile), p), anchor: i < 0 ? '' : decode(target.slice(i + 1)) };
+}
+
 // 找出写错的节点标题、父节点、连线、状态、卡片链接、元信息 current，以及写了 pdf 后没登记页码的图表
-function check(tree) {
+// 给出 Twig 文件路径时，再检查卡片里链接的本机文件是否存在
+function check(tree, twigFile) {
   const ids = new Set(tree.nodes.map(n => n.id));
   const problems = [];
   const missing = new Set();
@@ -99,6 +114,14 @@ function check(tree) {
     if (n.status && !STATUSES.includes(n.status)) problems.push(`节点 ${n.id} 的 status=${n.status} 无效（只能是 pending 或 extra）`);
     for (const [, target] of n.body.matchAll(/\]\(#([\w-]+)\)/g)) {
       if (!ids.has(target)) problems.push(`节点 ${n.id} 链接到不存在的 ${target}`);
+    }
+    if (twigFile) {
+      for (const [, , angled, plain] of n.body.replace(/`[^`]+`/g, '').matchAll(LINK)) {
+        const target = angled || plain;
+        if (!isLocal(target)) continue;
+        const { file } = localLink(target, twigFile);
+        if (!fs.existsSync(file)) problems.push(`节点 ${n.id} 链接的本机文件不存在：${file}`);
+      }
     }
     if (tree.pdf) figureRefs(n.body).forEach(k => { if (!tree.figures[k]) missing.add(k.replace(' ', '. ')); });
     for (const name of paperNames(n.body)) {
@@ -140,17 +163,18 @@ function toHtml(tree) {
   return template.replace('__DATA__', () => data);
 }
 
-module.exports = { parse, check, compare, toHtml };
+module.exports = { parse, check, compare, toHtml, isLocal, localLink };
 
 if (require.main === module && process.argv[2] === '--compare') {
-  const [before, after] = process.argv.slice(3).map(f => parse(fs.readFileSync(f, 'utf8')));
-  const problems = compare(before, after).concat(check(after));
+  const files = process.argv.slice(3);
+  const [before, after] = files.map(f => parse(fs.readFileSync(f, 'utf8')));
+  const problems = compare(before, after).concat(check(after, files[1]));
   problems.forEach(p => console.log('  ! ' + p));
   console.log(problems.length ? `共 ${problems.length} 条，逐条对照删除清单` : '没有丢失的节点和引文，格式无误');
 } else if (require.main === module) {
   for (const file of process.argv.slice(2)) {
     const tree = parse(fs.readFileSync(file, 'utf8'));
-    check(tree).forEach(p => console.log('  ! ' + p));
+    check(tree, file).forEach(p => console.log('  ! ' + p));
     const output = file.replace(/\.md$/, '.html');
     fs.writeFileSync(output, toHtml(tree));
     console.log(`已生成 ${output}（${tree.nodes.length} 个节点）`);
