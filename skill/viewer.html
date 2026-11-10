@@ -91,29 +91,40 @@
 
   /* 知识卡片排版 */
   #card { padding: 20px 28px 40px; overflow-y: auto; line-height: 1.75; }
-  #card h2 { font-size: 17px; font-weight: 600; margin: 0 0 14px; line-height: 1.5; }
-  #card h3 { font-size: 15px; font-weight: 600; margin: 26px 0 8px; padding-bottom: 4px; border-bottom: 1px solid var(--border); }
-  #card h4 { font-size: 14px; font-weight: 600; margin: 18px 0 6px; }
-  #card p { margin: 6px 0; }
-  #card ul, #card ol { margin: 6px 0; padding-left: 22px; }
-  #card li { margin: 3px 0; }
-  #card li > ul, #card li > ol { margin: 2px 0; }
-  #card strong { font-weight: 600; }
-  #card hr { border: 0; border-top: 1px solid var(--border); margin: 20px 0; }
-  #card code { font-family: Consolas, monospace; font-size: 12.5px; background: var(--bg); padding: 1px 5px; border-radius: 4px; }
-  #card blockquote { margin: 10px 0; padding: 6px 14px; border-left: 3px solid var(--box-border);
+  .prose h2 { font-size: 17px; font-weight: 600; margin: 0 0 14px; line-height: 1.5; }
+  .prose h3 { font-size: 15px; font-weight: 600; margin: 26px 0 8px; padding-bottom: 4px; border-bottom: 1px solid var(--border); }
+  .prose h4 { font-size: 14px; font-weight: 600; margin: 18px 0 6px; }
+  .prose p { margin: 6px 0; }
+  .prose ul, .prose ol { margin: 6px 0; padding-left: 22px; }
+  .prose li { margin: 3px 0; }
+  .prose li > ul, .prose li > ol { margin: 2px 0; }
+  .prose strong { font-weight: 600; }
+  .prose hr { border: 0; border-top: 1px solid var(--border); margin: 20px 0; }
+  .prose code { font-family: Consolas, monospace; font-size: 12.5px; background: var(--bg); padding: 1px 5px; border-radius: 4px; }
+  .prose blockquote { margin: 10px 0; padding: 6px 14px; border-left: 3px solid var(--box-border);
                      background: var(--bg); color: var(--muted); border-radius: 0 8px 8px 0; }
   .table { overflow-x: auto; margin: 10px 0; }
-  #card table { border-collapse: collapse; font-size: 13px; line-height: 1.6; min-width: 100%; }
-  #card th { background: var(--bg); font-weight: 600; text-align: left; }
-  #card th, #card td { padding: 6px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  .prose table { border-collapse: collapse; font-size: 13px; line-height: 1.6; min-width: 100%; }
+  .prose th { background: var(--bg); font-weight: 600; text-align: left; }
+  .prose th, .prose td { padding: 6px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
   .state { display: inline-block; font-size: 12px; color: var(--muted); border: 1px dashed var(--line);
            border-radius: 6px; padding: 0 8px; margin: -4px 0 12px; }
   .src { display: table; font-size: 12px; line-height: 1.6; color: var(--muted); border: 1px solid var(--line);
          border-radius: 6px; padding: 1px 8px; margin: 20px 0 4px; }
-  #card h2 + .src, .state + .src { margin-top: 0; }
+  .prose h2 + .src, .state + .src { margin-top: 0; }
   .src.推断 { color: var(--warn); border-color: var(--warn); }
+  .src.推导 { border-style: dotted; }                           /* 由前文推出、可逐步核对：不像【推断】那样提醒 */
   .src.unread { border-style: dashed; color: var(--faint); }   /* 只核实了存在、未读原文的【论文】 */
+  .src.inl { display: inline; margin: 0 2px; padding: 0 6px; }  /* 写在句末的标签 */
+
+  /* 灵感笔记：整篇文档，不画树 */
+  #doc { display: none; max-width: 860px; margin: 0 auto; padding: 4px 0 40px; line-height: 1.75; }
+  body.doc #doc { display: block; }
+  body.doc #stage, body.doc .zoom, body.doc #panel { display: none; }
+  body.doc header { max-width: 924px; width: 100%; margin: 0 auto; }
+  #doc h2 { font-size: 16.5px; margin: 34px 0 10px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
+  #doc h2:first-child { margin-top: 8px; }
+  #doc .focus { background: var(--box); border-radius: 4px; transition: background 1.5s; }
   a.pg { color: inherit; text-decoration: none; border-bottom: 1px dotted currentColor; cursor: pointer; }
   a.pg:hover { color: var(--accent); }
   .m { font-family: "Cambria Math", Cambria, "Times New Roman", serif; font-size: 1.06em; white-space: nowrap; }
@@ -126,7 +137,7 @@
   a.link { color: var(--accent); text-decoration: none; border-bottom: 1px solid var(--box-border); cursor: pointer; }
   a.link:hover { border-bottom-color: var(--accent); }
   a.ext { color: var(--accent); }
-  #card a[target] { color: var(--accent); }
+  .prose a[target] { color: var(--accent); }
   .kids { margin-top: 28px; padding-top: 14px; border-top: 1px solid var(--border); font-size: 13px; }
   .kids h5 { margin: 0 0 6px; font-size: 12px; font-weight: 500; color: var(--muted); }
   .kids div { margin: 4px 0; }
@@ -137,14 +148,14 @@
   <h1 id="title"></h1>
   <div class="meta" id="meta"></div>
 </header>
-<main><div id="stage"><div id="canvas"><svg id="lines"></svg></div></div></main>
+<main><div id="stage"><div id="canvas"><svg id="lines"></svg></div></div><article id="doc" class="prose"></article></main>
 <div class="zoom">
   <button id="zoomOut" title="缩小">−</button><button id="zoomIn" title="放大">+</button>
 </div>
 <aside id="panel">
   <div id="resize" title="拖动调整宽度，双击恢复默认"></div>
   <div class="bar"><div class="crumb" id="crumb"></div><button id="close" aria-label="关闭">×</button></div>
-  <div id="card"></div>
+  <div id="card" class="prose"></div>
 </aside>
 
 <!-- build.cjs 把 Twig 文件解析后的数据填在这里 -->
@@ -190,7 +201,17 @@ function eq(src) {
   }
   return '<div class="eq">' + tex(esc(src.replace(/\n/g, ' '))) + '</div>';
 }
-function katexReady() { if (openId && byId[openId]) open(byId[openId], true); }   // KaTeX 加载完，重画已打开的卡片
+// 灵感笔记的行内公式也用 KaTeX：推导型笔记的行内式子常有 \dot、\frac，换成 Unicode 显示不了
+function inlineEq(src) {
+  if (T.doc !== undefined && window.katex) {
+    try { return katex.renderToString(src, { throwOnError: false, strict: false }); } catch (e) {}
+  }
+  return '<span class="m">' + tex(esc(src)) + '</span>';
+}
+function katexReady() {                                                // KaTeX 加载完，重画灵感笔记或已打开的卡片
+  if (T.doc !== undefined) renderDoc();
+  else if (openId && byId[openId]) open(byId[openId], true);
+}
 
 /* ---------- 跳转原文：页码、图表做成链接，点击后由扩展打开 PDF ---------- */
 
@@ -260,6 +281,7 @@ function pages(s) {
 /* ---------- 行内格式 ---------- */
 
 function esc(s) { return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+function unesc(s) { return s.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&'); }
 function short(n) { return n.label.split('：')[0]; }
 // 链接 [文字](地址)，地址含空格或括号时写成 [文字](<地址>)（此时已转义成 &lt;…&gt;）；与 build.cjs 中的 LINK 相同
 var LINK = /\[([^\]]+)\]\((?:&lt;(.+?)&gt;|([^)\s]+))\)/g;
@@ -275,13 +297,14 @@ function extLink(text, target) {
   var href = local && /^[a-z]:[\\/]/i.test(target) ? 'file:///' + target.replace(/\\/g, '/') : target;
   return '<a class="ext" href="' + attr(href) + '" target="_blank" title="' + (local ? '打开本机文件 ' : '在浏览器打开 ') + attr(target) + '">' + text + '</a>';
 }
-// 处理顺序：转义 → 代码、公式先暂存 → [文字](#节点id) 卡片链接 → [文字](地址) 也暂存，地址不受后面几步影响 → **加粗** → *斜体* → 页码与图表
+// 处理顺序：转义 → 代码、句末的来源标签、公式先暂存 → [文字](#节点id) 卡片链接 → [文字](地址) 也暂存，地址不受后面几步影响 → **加粗** → *斜体* → 页码与图表
 function inline(s, linked) {
   var keep = [];
   function stash(h) { keep.push(h); return '\u0000' + (keep.length - 1) + '\u0000'; }
   s = esc(s)
     .replace(/`([^`]+)`/g, function (_, c) { return stash('<code>' + c + '</code>'); })
-    .replace(/\$([^$]+)\$/g, function (_, c) { return stash('<span class="m">' + tex(c) + '</span>'); })
+    .replace(INLINE_SRC, function (_, kind, where) { return stash(srcTag(kind, where && unesc(where), true, linked)); })
+    .replace(/\$([^$]+)\$/g, function (_, c) { return stash(inlineEq(unesc(c))); })
     .replace(/\[([^\]]+)\]\(#([\w-]+)\)/g, function (_, text, id) {
       if (!byId[id] || !linked) return text;
       linked[id] = true;
@@ -297,23 +320,29 @@ function inline(s, linked) {
 
 /* ---------- 块级排版（Markdown 子集） ---------- */
 
-// 来源标签【原文 · …】【论文 · …】【教材 · …】【推断】；背景是旧写法，照常显示。【论文】的写法与 build.cjs 中的 paperNames 相同
-var SRC = /^【(原文|论文|教材|推断|背景)(?:\s*·\s*(.+))?】$/;
-var BLOCK_START = /^(#{3,4}\s|>|\||\$\$|---+$|【|[-*]\s|\d+[.、]\s)/;
+// 来源标签【原文 · …】【论文 · …】【教材 · …】【推断】【推导 · 依据】，“·”也可写成“：”；背景是旧写法，照常显示
+// 单独一行时显示在段前（SRC），写在句末时显示在行内（INLINE_SRC）。【论文】的写法与 build.cjs 中的 paperNames 相同
+var SRC = /^【(原文|论文|教材|推断|推导|背景)(?:\s*[·：:]\s*(.+))?】$/;
+var INLINE_SRC = /【(原文|论文|教材|推断|推导|背景)(?:\s*[·：:]\s*([^】]+))?】/g;
+function srcTag(kind, where, inl, linked) {
+  var paper = kind === '论文', unread = paper && !/p\.\d/.test(where || '');
+  var text = !where ? '' : paper ? paperTag(where) : inline(where, linked);   // 原文标签里每个页码、图表各自可点
+  var tag = inl ? 'span' : 'div';
+  return '<' + tag + ' class="src ' + kind + (inl ? ' inl' : '') + (unread ? ' unread' : '') + '">' + kind + (text ? ' · ' + text : '') + '</' + tag + '>';
+}
+var BLOCK_START = /^(#{2,4}\s|>|\||\$\$|---+$|【|[-*]\s|\d+[.、]\s)/;
 function md(text, linked) {
   var lines = text.split('\n'), out = [], i = 0, m;
   function il(s) { return inline(s, linked); }
   while (i < lines.length) {
     var t = lines[i].trim();
     if (!t) { i++; continue; }
-    if ((m = t.match(/^(#{3,4})\s+(.*)$/))) {                          // 小标题
-      var h = 'h' + m[1].length; out.push('<' + h + '>' + il(m[2]) + '</' + h + '>'); i++;
+    if ((m = t.match(/^(#{2,4})\s+(.*)$/))) {                          // 小标题；## 只出现在灵感笔记里，卡片里的 ## 是节点标题
+      var h = 'h' + m[1].length;
+      out.push('<' + h + ' data-title="' + attr(m[2]) + '">' + il(m[2]) + '</' + h + '>'); i++;
     } else if (/^---+$/.test(t)) { out.push('<hr>'); i++; }            // 分隔线
-    else if ((m = t.match(SRC))) {                                     // 来源标签
-      var paper = m[1] === '论文', unread = paper && !/p\.\d/.test(m[2] || '');
-      var where = !m[2] ? '' : paper ? paperTag(m[2]) : il(m[2]);      // 原文标签里每个页码、图表各自可点
-      out.push('<div class="src ' + m[1] + (unread ? ' unread' : '') + '">' + m[1] + (where ? ' · ' + where : '') + '</div>'); i++;
-    } else if (t.slice(0, 2) === '$$') {                               // 行间公式：$$…$$，可跨多行
+    else if ((m = t.match(SRC))) { out.push(srcTag(m[1], m[2], false, linked)); i++; }   // 来源标签
+    else if (t.slice(0, 2) === '$$') {                               // 行间公式：$$…$$，可跨多行
       var src = [t.slice(2)];
       while (!/\$\$$/.test(src[src.length - 1]) && i + 1 < lines.length) src.push(lines[++i].trim());
       out.push(eq(src.join('\n').replace(/\$\$$/, '').trim())); i++;
@@ -342,7 +371,14 @@ function md(text, linked) {
   return out.join('');
 }
 function table(rows, il) {
-  function cells(r) { return r.replace(/^\||\|$/g, '').split('|').map(function (c) { return c.trim(); }); }
+  function cells(r) {                                                 // 公式 $…$ 里的 |（如 P(R\,|\,R')）不算分隔
+    var out = [''], math = false;
+    for (var k = 0; k < r.length; k++) {
+      if (r[k] === '$') math = !math;
+      if (r[k] === '|' && !math) out.push(''); else out[out.length - 1] += r[k];
+    }
+    return out.slice(r[0] === '|' ? 1 : 0, /\|\s*$/.test(r) ? -1 : undefined).map(function (c) { return c.trim(); });
+  }
   var head = cells(rows[0]), body = rows.slice(/^\|?[\s:|-]+\|?$/.test(rows[1] || '') ? 2 : 1);
   return '<div class="table"><table><tr>' + head.map(function (c) { return '<th>' + il(c) + '</th>'; }).join('') + '</tr>' +
     body.map(function (r) { return '<tr>' + cells(r).map(function (c) { return '<td>' + il(c) + '</td>'; }).join('') + '</tr>'; }).join('') +
@@ -375,6 +411,8 @@ function edge(d, assoc, at) {
 
 function render(data) {
   T = data; byId = {}; kids = {}; trunk = []; elById = {};
+  document.body.classList.toggle('doc', T.doc !== undefined);
+  if (T.doc !== undefined) { renderDoc(); return; }
   T.nodes.forEach(function (n) { byId[n.id] = n; kids[n.id] = []; });
   T.nodes.forEach(function (n) { n.parent && kids[n.parent] ? kids[n.parent].push(n) : trunk.push(n); });
 
@@ -439,10 +477,35 @@ function render(data) {
     '<span class="legend"><svg width="26" height="8">' + edge('M1 4 H25', true) + '</svg>关联</span>');
   document.getElementById('meta').innerHTML = meta.join('<span class="sep">·</span>');
 
-  // 重画后保持原来打开的卡片
-  if (openId && byId[openId]) open(byId[openId], true); else close();
+  // 重画后保持原来打开的卡片；从别的文件点链接打开时，打开链接指向的节点
+  if (T.focus && byId[T.focus]) { open(byId[T.focus]); T.focus = null; }
+  else if (openId && byId[openId]) open(byId[openId], true); else close();
 }
 function chain(n) { var p = []; while (n) { p.unshift(n); n = byId[n.parent]; } return p; }
+
+/* ---------- 灵感笔记：整篇文档 ---------- */
+
+// 改动后重画时滚动位置不变（main 没有换掉）；从别的文件点链接打开时，滚到链接指向的标题
+function renderDoc() {
+  document.title = T.title || 'Twig';
+  document.getElementById('title').innerHTML = inline(T.title || '');
+  document.getElementById('meta').innerHTML = '';
+  document.getElementById('doc').innerHTML = md(T.doc);
+  if (T.focus) { focus(T.focus); T.focus = null; }
+}
+
+// 定位：追问图打开 id 为 anchor 的节点；灵感笔记滚到 anchor 这个标题，没有完全相同的就取第一个以它开头的（如 #3.2 → “3.2 碰并：…”）
+// 与 extension.js 的 openLink 在编辑器里找标题的办法、build.cjs 的 anchorProblem 相同
+function focus(anchor) {
+  if (T.doc === undefined) { if (byId[anchor]) open(byId[anchor]); return; }
+  var heads = [].slice.call(document.querySelectorAll('#doc [data-title]'));
+  var h = heads.filter(function (e) { return e.dataset.title === anchor; })[0] ||
+          heads.filter(function (e) { return e.dataset.title.indexOf(anchor) === 0; })[0];
+  if (!h) return;
+  h.scrollIntoView({ block: 'start' });
+  h.classList.add('focus');
+  setTimeout(function () { h.classList.remove('focus'); }, 1200);
+}
 
 /* ---------- 知识卡片 ---------- */
 
@@ -471,7 +534,8 @@ function open(n, keepScroll) {
   document.body.classList.add('panel-open');
   if (!keepScroll) setTimeout(function () { el.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' }); }, 240);
 }
-document.getElementById('panel').addEventListener('click', function (e) {   // 卡片里的链接、路径都能跳转
+document.addEventListener('click', function (e) {     // 卡片和灵感笔记里的链接、路径都能跳转
+  if (!e.target.closest('#panel, #doc')) return;
   var a = e.target.closest('[data-id]');
   if (a && byId[a.dataset.id]) open(byId[a.dataset.id]);
   var pg = e.target.closest('[data-page]');
@@ -529,17 +593,17 @@ function zoomAt(next, cx, cy) {
 }
 function zoomCenter(next) { var r = mainEl.getBoundingClientRect(); zoomAt(next, r.left + r.width / 2, r.top + r.height / 2); }
 mainEl.addEventListener('wheel', function (e) {
-  if (!e.ctrlKey || document.body.classList.contains('panel-open')) return;
+  if (!e.ctrlKey || document.body.classList.contains('panel-open') || T.doc !== undefined) return;
   e.preventDefault();
   zoomAt(scale * Math.exp(-e.deltaY * 0.002), e.clientX, e.clientY);
 }, { passive: false });
 document.getElementById('zoomIn').onclick = function () { zoomCenter(scale * 1.2); };
 document.getElementById('zoomOut').onclick = function () { zoomCenter(scale / 1.2); };
 
-// 没有滚动条后，按住空白处拖动来平移视图；拖动过就不算“点空白关闭卡片”
+// 没有滚动条后，按住空白处拖动来平移视图；拖动过就不算“点空白关闭卡片”。灵感笔记不拖动，留给选中文字
 var drag = null;
 mainEl.addEventListener('mousedown', function (e) {
-  if (e.button !== 0 || e.target.closest('.node')) return;
+  if (e.button !== 0 || e.target.closest('.node') || T.doc !== undefined) return;
   drag = { x: e.clientX, y: e.clientY, left: mainEl.scrollLeft, top: mainEl.scrollTop, moved: false };
 });
 window.addEventListener('mousemove', function (e) {
@@ -554,8 +618,11 @@ window.addEventListener('mouseup', function () {
 });
 
 render(JSON.parse(document.getElementById('data').textContent));
-// VSCode 预览：源文件改动时扩展发来新数据，重画
-window.addEventListener('message', function (e) { if (e.data && e.data.nodes) render(e.data); });
+// VSCode 预览：源文件改动时扩展发来新数据，重画；从别的文件点链接到已打开的预览时，发来要定位的节点或标题
+window.addEventListener('message', function (e) {
+  if (e.data && e.data.nodes) render(e.data);
+  if (e.data && e.data.focus) focus(e.data.focus);
+});
 </script>
 </body>
 </html>

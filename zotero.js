@@ -121,7 +121,7 @@ async function libraryDir() {
   return null;
 }
 
-// 没开工作区时 Twig阅读整理 放在哪个文件夹下：Zotero 数据目录的上一级；推不出时为 null
+// 没开工作区时 Twig追问整理 放在哪个文件夹下：Zotero 数据目录的上一级；推不出时为 null
 async function home(pdf) {
   const dir = pdf ? dataDir(pdf) : await libraryDir();
   return dir && path.dirname(dir);

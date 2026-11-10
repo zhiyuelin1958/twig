@@ -17,10 +17,13 @@
 |---|---|---|
 | `README.md` | 商店访客 | 解决什么问题、核心功能、推荐的工作台布局、怎么安装和开始用；不写实现细节和规则细节 |
 | `docs/workspace.md` | 用户 | 工作台搭建的完整说明：各种布局的做法和原因；README 只放结论并链接到这里 |
-| `SKILL.md` | AI | 何时触发、按什么顺序读哪些文件 |
-| `书写要求.md` | AI | 写 Twig 文件的全部规则 |
+| `SKILL.md` | AI | 何时触发、按什么任务读哪些文件 |
+| `书写要求.md` | AI | 写追问图的规则：流程、树的结构、卡片、全文主线、提问清单 |
+| `sources.md` | AI | 追问图和灵感笔记共用的：来源标签、外部论文的核实与登记、教材、页面支持的写法表 |
+| `discuss.md` | AI | 讨论想法时每轮怎么回应 |
+| `idea.md` | AI | 写灵感笔记的规则 |
 | `reorganize.md` | AI | 整理一棵子树的流程；何时整理写在 `书写要求.md` |
-| `模板.md` | AI | 新 Twig 文件的骨架 |
+| `模板.md`、`idea-template.md` | AI | 新追问图、新灵感笔记的骨架 |
 | `maintain.md` | AI | 本文件（维护准则） |
 
 - README 保持简洁，只写核心；新功能先问是否值得写进 README，值得也只写一句。
@@ -30,9 +33,9 @@
 
 | 文件 | 职责 |
 |---|---|
-| `skill/build.cjs` | 解析源文件（`parse`、`figurePages`、`refLinks`）、检查格式（`check`）、比对整理前后（`compare`）、改写移动后的相对路径（`relocate`）、生成页面（`toHtml`）；命令行和扩展共用 |
-| `skill/viewer.html` | 页面：样式和脚本，按注释标题分节（公式、跳转原文、行内格式、块级排版、画树、知识卡片、缩放）；KaTeX 版本在 `<head>` |
-| `extension.js` | 只放与 VSCode 交互的部分：命令、预览面板、新建时的搜索框、打开 PDF（`openPdf`）、在浏览器打开外部链接、按文献库分类整理文件夹（`syncFolders`）、安装 skill |
+| `skill/build.cjs` | 解析源文件（`parse`，按文件名分追问图 `_twig.md` 与灵感笔记 `_idea.md`；`figurePages`、`refLinks`）、检查格式与链接（`check`）、比对整理前后（`compare`）、改写移动后的相对路径（`relocate`）、生成页面（`toHtml`）；命令行和扩展共用 |
+| `skill/viewer.html` | 页面：样式和脚本，按注释标题分节（公式、跳转原文、行内格式、块级排版、画树、灵感笔记、知识卡片、缩放）；KaTeX 版本在 `<head>` |
+| `extension.js` | 只放与 VSCode 交互的部分：命令、预览面板、新建时的搜索框、新建灵感笔记（`newIdea`）、打开 PDF（`openPdf`）、打开链接（`openLink`，指向 Twig 文件的在预览中定位）、按文献库分类整理文件夹（`syncFolders`）、旧文件夹改名（`renameOldFolder`）、安装 skill |
 | `library.js` | 文献库接口（各文献库模块导出哪些成员，写在文件开头）、按设置选文献库，以及与具体文献库无关的部分：引文格式、文件名、把引文、`pdf`、文献编号、`firstPage` 填进模板；不用 vscode 接口 |
 | `zotero.js` | Zotero 文献库：通过 Zotero 本地 API 列分类、搜索文献、取 PDF 路径和所在分类，推出数据目录和 Twig 文件对应的文献编号；不用 vscode 接口 |
 | `bibtex.js` | BibTeX 文献库：解析 `.bib` 文件的条目、JabRef 分组和 `file` 字段（兼容 JabRef 与 Zotero、Mendeley 等的导出写法）；只读，不改 `.bib`；不用 vscode 接口 |
@@ -41,8 +44,8 @@
 - 新功能按职责放进对应文件，再放进文件中对应的一节；没有合适的节时新开一节并加注释标题。
 - 接入新的文献库：新建一个模块，导出 `library.js` 开头列的全部成员，在 `library.js` 的 `open` 里登记；`extension.js` 不用改。
 - 两处必须一致的内容（如 `viewer.html` 和 `build.cjs` 中的 `REF`，`extension.js` 和 `uninstall.js` 中的 `AI_HOMES`）在两处注释里互相注明。
-- 改了写法支持，同步改 `书写要求.md` 的“页面支持的写法”表。
-- 改了 `viewer.html` 或 `build.cjs`，用 `node skill/build.cjs <已有的 _twig.md>` 生成页面检查，不应出现提示。
+- 改了写法支持，同步改 `sources.md` 的“页面支持的写法”表。
+- 改了 `viewer.html` 或 `build.cjs`，用 `node skill/build.cjs <已有的 _twig.md 和 _idea.md>` 生成页面检查，不应出现提示。
 - `个人偏好.md` 不进仓库、不进 vsix，否则会覆盖用户自己的偏好。
 - `skill/` 里新加的文件用英文文件名。商店会把文件名里的中文逐字节换成问号，字节数相同的两个中文名会被当成同一个文件，上传报错。
 - 安装和卸载只处理当前 `skill/` 里有的文件。改名或删掉其中的文件时，在 `extension.js` 的 `installSkill` 和 `uninstall.js` 里加上旧文件名，让升级和卸载时一并删掉，否则旧文件会一直留在用户目录里。

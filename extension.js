@@ -1,4 +1,5 @@
-// Twig VSCode 扩展：预览 *_twig.md、导出 HTML、新建（可从文献库取文献信息）、按文献库分类整理文件夹、把 AI 书写规则装成各家 AI 的 skill
+// Twig VSCode 扩展：预览 *_twig.md 与灵感笔记 *_idea.md、导出 HTML、新建（可从文献库取文献信息）、新建灵感笔记、
+// 按文献库分类整理文件夹、把 AI 书写规则装成各家 AI 的 skill
 const vscode = require('vscode');
 const fs = require('fs');
 const os = require('os');
@@ -10,15 +11,19 @@ const SKILL_SOURCE = path.join(__dirname, 'skill');
 // 各家 AI 读取个人 skill 的目录。Copilot 也读 ~/.claude/skills，所以不再单独装。与 uninstall.js 中的 AI_HOMES 相同
 const AI_HOMES = { 'Claude Code': '.claude', 'Codex': '.codex', 'Gemini': '.gemini' };
 const panels = new Map();   // 源文件 → 预览面板
+// 工作区下的默认文件夹：追问图和灵感笔记各一个；0.5.0 以前追问图的文件夹叫 Twig阅读整理，见 renameOldFolder
+const TWIG_DIR = 'Twig追问整理', OLD_TWIG_DIR = 'Twig阅读整理', IDEA_DIR = 'Twig灵感笔记';
 
 function activate(context) {
   setupSkill(context);
+  renameOldFolder(context);
 
   let timer;
   context.subscriptions.push(
     vscode.commands.registerCommand('twig.preview', uri => preview(uri)),
     vscode.commands.registerCommand('twig.exportHtml', uri => exportHtml(uri)),
     vscode.commands.registerCommand('twig.newTree', newTree),
+    vscode.commands.registerCommand('twig.newIdea', newIdea),
     vscode.commands.registerCommand('twig.syncFolders', syncFolders),
     // 手动安装同时打开设置，之后扩展升级时规则跟着更新
     vscode.commands.registerCommand('twig.installSkill', async () => {
@@ -31,7 +36,7 @@ function activate(context) {
       const panel = panels.get(e.document.uri.toString());
       if (!panel) return;
       clearTimeout(timer);
-      timer = setTimeout(() => panel.webview.postMessage(tree.parse(e.document.getText())), 300);
+      timer = setTimeout(() => panel.webview.postMessage(tree.parse(e.document.getText(), e.document.uri.fsPath)), 300);
     })
   );
 }
@@ -40,16 +45,23 @@ function sourceUri(uri) {
   return uri || (vscode.window.activeTextEditor && vscode.window.activeTextEditor.document.uri);
 }
 
-async function preview(uri) {
+// focus：打开后定位到的节点 id（追问图）或标题（灵感笔记），从别的文件点链接过来时给出
+async function preview(uri, focus) {
   uri = sourceUri(uri);
   if (!uri) return;
   const key = uri.toString();
-  if (panels.has(key)) { panels.get(key).reveal(vscode.ViewColumn.Beside); return; }
+  if (panels.has(key)) {
+    panels.get(key).reveal(vscode.ViewColumn.Beside);
+    if (focus) panels.get(key).webview.postMessage({ focus });
+    return;
+  }
 
   const doc = await vscode.workspace.openTextDocument(uri);
   const panel = vscode.window.createWebviewPanel('twig', 'Twig · ' + path.basename(uri.fsPath, '.md'),
     vscode.ViewColumn.Beside, { enableScripts: true, retainContextWhenHidden: true });
-  panel.webview.html = tree.toHtml(tree.parse(doc.getText()));
+  const data = tree.parse(doc.getText(), uri.fsPath);
+  if (focus) data.focus = focus;                   // 面板刚建好时收不到消息，写进页面数据
+  panel.webview.html = tree.toHtml(data);
   panels.set(key, panel);
   panel.onDidDispose(() => panels.delete(key));
   panel.webview.onDidReceiveMessage(m => {
@@ -60,7 +72,8 @@ async function preview(uri) {
 
 // 卡片里的链接 [文字](地址)：网址用浏览器打开；其余是本机路径（相对 Twig 文件，或绝对路径），解析见 build.cjs 的 localLink
 // - PDF：用 PDF Viewer 打开，#page=5 跳到 PDF 第 5 页；没装 PDF Viewer 时用系统默认程序
-// - 文本文件（md、tex、py 等）：在旁边的编辑器打开，#L42 跳到第 42 行，Markdown 的 #标题 跳到该标题
+// - 追问图 *_twig.md、灵感笔记 *_idea.md：打开它的预览，#节点id 打开那张卡片，灵感笔记的 #标题 滚到该标题
+// - 其他文本文件（md、tex、py 等）：在旁边的编辑器打开，#L42 跳到第 42 行，Markdown 的 #标题 跳到该标题
 // - 其余（文件夹、docx、图片等）：用系统默认程序打开，文件夹在资源管理器中打开
 async function openLink(uri, target) {
   if (!tree.isLocal(target)) {
@@ -69,6 +82,7 @@ async function openLink(uri, target) {
   }
   const { file, anchor } = tree.localLink(target, uri.fsPath);
   if (!fs.existsSync(file)) { vscode.window.showWarningMessage('找不到链接的本机文件：' + file); return; }
+  if (tree.isTwig(file) || tree.isIdea(file)) return preview(vscode.Uri.file(file), anchor.trim());
   const external = () => vscode.env.openExternal(vscode.Uri.file(file));
   if (fs.statSync(file).isDirectory()) return external();
   if (/\.pdf$/i.test(file)) return hasPdfViewer() ? showPdf(file, +(anchor.match(/^page=(\d+)/) || [])[1] || 1) : external();
@@ -165,7 +179,7 @@ async function exportHtml(uri) {
   uri = sourceUri(uri);
   if (!uri) return;
   const doc = await vscode.workspace.openTextDocument(uri);
-  const data = tree.parse(doc.getText());
+  const data = tree.parse(doc.getText(), uri.fsPath);
   const output = uri.fsPath.replace(/\.md$/, '.html');
   fs.writeFileSync(output, tree.toHtml(data));
   const problems = tree.check(data, uri.fsPath);
@@ -225,7 +239,7 @@ async function newTree() {
   preview(target);
 }
 
-// Twig 文件放在哪：根目录下按文献库分类建子文件夹，如 Twig阅读整理/大气科学文献1/2026暑假
+// Twig 文件放在哪：根目录下按文献库分类建子文件夹，如 Twig追问整理/大气科学文献1/2026暑假
 // 根目录见 twigRoot；取不到时（没开工作区，又推不出文献库的位置）用当前文件夹
 // 不是从文献库选的论文：当前文件夹在根目录之下（如正开着同一主题的 Twig 文件）时用当前文件夹，否则用根目录
 // 子文件夹：浏览时点过的那条路径；搜到的论文按它所在的分类，在多个分类里时让用户选
@@ -255,16 +269,101 @@ async function twigFolder(lib, item, pdf, trail) {
   return categoryDir(root, names);
 }
 
-// Twig 文件的根目录，依次取：设置 twig.folder；工作区（当前文件所在的那个，否则第一个）下的 Twig阅读整理；
-// 没开工作区时为文献库旁的 Twig阅读整理（见各文献库的 home；不给 lib 时不取）；都没有时为空
+// Twig 文件的根目录，依次取：设置 twig.folder；工作区（当前文件所在的那个，否则第一个）下的 Twig追问整理；
+// 没开工作区时为文献库旁的 Twig追问整理（见各文献库的 home；不给 lib 时不取）；都没有时为空
+// 用户没同意把旧的 Twig阅读整理 改名时（见 renameOldFolder），继续用旧文件夹
 async function twigRoot(lib, pdf) {
   const setting = vscode.workspace.getConfiguration('twig').get('folder');
   if (setting) return setting;
   const ws = currentWorkspace();
-  if (ws) return path.join(ws.uri.fsPath, 'Twig阅读整理');
-  let home = null;
-  try { home = lib && await lib.home(pdf); } catch (e) { }   // 文献库连不上时当作推不出
-  return home && path.join(home, 'Twig阅读整理');
+  let home = ws && ws.uri.fsPath;
+  if (!home) try { home = lib && await lib.home(pdf); } catch (e) { }   // 文献库连不上时当作推不出
+  if (!home) return null;
+  const now = path.join(home, TWIG_DIR), old = path.join(home, OLD_TWIG_DIR);
+  return !fs.existsSync(now) && fs.existsSync(old) ? old : now;
+}
+
+// 灵感笔记的根目录：设置 twig.ideaFolder，否则为工作区下的 Twig灵感笔记；没开工作区时为空
+function ideaRoot() {
+  const setting = vscode.workspace.getConfiguration('twig').get('ideaFolder');
+  if (setting) return setting;
+  const ws = currentWorkspace();
+  return ws ? path.join(ws.uri.fsPath, IDEA_DIR) : null;
+}
+
+// 0.5.0 起追问图的默认文件夹改名为 Twig追问整理：工作区里只有旧的 Twig阅读整理 时问一次是否改名
+// 只改文件夹名，层级不变，Twig 文件里指向 PDF 的相对路径不受影响；文件夹外的 Twig 文件（追问图、灵感笔记）里指向它的链接跟着改写
+async function renameOldFolder(context) {
+  if (vscode.workspace.getConfiguration('twig').get('folder')) return;
+  for (const ws of vscode.workspace.workspaceFolders || []) {
+    const old = path.join(ws.uri.fsPath, OLD_TWIG_DIR), now = path.join(ws.uri.fsPath, TWIG_DIR);
+    const asked = 'renameAsked:' + old;
+    if (!fs.existsSync(old) || fs.existsSync(now) || context.globalState.get(asked)) continue;
+    context.globalState.update(asked, true);
+    const answer = await vscode.window.showInformationMessage(
+      `Twig 0.5.0 新增了灵感笔记（放在 ${IDEA_DIR}），追问图的文件夹改名为 ${TWIG_DIR}。现在把 ${OLD_TWIG_DIR} 改名吗？` +
+      '里面的文件和指向 PDF 的路径都不受影响；不改名也能照常使用。', '改名', '保持原名');
+    if (answer !== '改名') continue;
+    const edit = new vscode.WorkspaceEdit();       // 由 VSCode 改名，开着的编辑器跟着换到新位置
+    edit.renameFile(vscode.Uri.file(old), vscode.Uri.file(now));
+    if (!await vscode.workspace.applyEdit(edit)) { vscode.window.showWarningMessage('改名失败：' + old); continue; }
+    for (const [key, panel] of panels) if (vscode.Uri.parse(key).fsPath.startsWith(old + path.sep)) panel.dispose();
+    const moved = f => f.startsWith(old + path.sep) ? now + f.slice(old.length) : f;
+    const ideas = path.join(ws.uri.fsPath, IDEA_DIR);
+    fixLinks(fs.existsSync(ideas) ? [ideas] : [], moved);
+  }
+}
+
+// 文件移走后，改写 dirs 下各 Twig 文件（追问图、灵感笔记）里指向它们的本机链接；moved 把旧路径换成新路径
+function fixLinks(dirs, moved) {
+  for (const dir of dirs) {
+    for (const f of fs.readdirSync(dir, { recursive: true })) {
+      const file = path.join(dir, f);
+      if (!tree.isTwig(file) && !tree.isIdea(file)) continue;
+      const text = fs.readFileSync(file, 'utf8');
+      const now = tree.relocate(text, file, file, moved);
+      if (now !== text) fs.writeFileSync(file, now);
+    }
+  }
+}
+
+// 新建灵感笔记：在灵感笔记根目录下选一个主题文件夹（或新建），填简题，从 idea-template.md 生成 <编号>_<简题>_idea.md
+// 当前编辑器开着追问图时，在“起因”里放一个指回它的链接，AI 再补具体节点
+async function newIdea() {
+  const root = ideaRoot();
+  if (!root) { vscode.window.showWarningMessage('先打开一个工作区，或在设置里填 twig.ideaFolder'); return; }
+  const topics = fs.existsSync(root)
+    ? fs.readdirSync(root, { withFileTypes: true }).filter(d => d.isDirectory()).map(d => d.name) : [];
+  const chosen = await vscode.window.showQuickPick([
+    ...topics.map(t => ({ label: '$(folder) ' + t, dir: path.join(root, t) })),
+    { label: '$(new-folder) 新建主题文件夹…', create: true },
+    { label: '$(root-folder) 直接放在 ' + path.basename(root), dir: root }
+  ], { placeHolder: '灵感笔记放在哪个主题下' });
+  if (!chosen) return;
+  let dir = chosen.dir;
+  if (chosen.create) {
+    const name = await vscode.window.showInputBox({ prompt: '主题文件夹名', validateInput: v => /[\\/:*?"<>|]/.test(v) ? '不能含 \\ / : * ? " < > |' : '' });
+    if (!name || !name.trim()) return;
+    dir = path.join(root, name.trim());
+  }
+  const title = await vscode.window.showInputBox({ prompt: '简题：这条灵感想做什么，如“按物质层建立云滴谱方程”' });
+  if (!title || !title.trim()) return;
+  fs.mkdirSync(dir, { recursive: true });
+  const number = String(fs.readdirSync(dir).filter(f => tree.isIdea(f)).length + 1).padStart(2, '0');   // 编号按已有文件顺延
+  const file = path.join(dir, number + '_' + title.trim().replace(/[\\/:*?"<>|\s]+/g, '') + '_idea.md');
+  if (fs.existsSync(file)) { vscode.window.showWarningMessage('已有同名文件：' + file); return; }
+
+  let text = fs.readFileSync(path.join(SKILL_SOURCE, 'idea-template.md'), 'utf8').replace(/^# .*$/m, '# ' + title.trim());
+  const editor = vscode.window.activeTextEditor;
+  const from = editor && editor.document.uri.fsPath;
+  if (from && tree.isTwig(from)) {
+    const rel = path.relative(dir, from).split(path.sep).join('/');
+    const name = tree.parse(editor.document.getText(), from).title || path.basename(from, '.md');
+    text = text.replace(/^(起因：).*$/m, (_, key) => key + '读 [' + name + '](' + (/[\s()<>]/.test(rel) ? '<' + rel + '>' : rel) + ') 时想到。');
+  }
+  fs.writeFileSync(file, text);
+  await vscode.window.showTextDocument(vscode.Uri.file(file));
+  preview(vscode.Uri.file(file));
 }
 
 // 文献库分类对应的文件夹，names 为从顶层往下的分类名；去掉文件夹名里不允许的字符
@@ -381,7 +480,8 @@ async function choosePdf() {
 }
 
 // 整理文件夹：文献库里分类改名、移动，或论文换了分类后，把 Twig 文件移到论文现在所在分类的文件夹
-// 同一前缀的文件（如 01_Morrison等2009_提问清单.md、导出的 .html）一起移；移动后改写 pdf、refs 里的 PDF 路径和正文本机链接的相对路径，没写文献编号的补上
+// 同一前缀的文件（如 01_Morrison等2009_提问清单.md、导出的 .html）一起移；移动后改写 pdf、refs 里的 PDF 路径和正文本机链接的相对路径，没写文献编号的补上；
+// 灵感笔记和其他 Twig 文件里指向移走文件的链接也跟着改
 // 不动的：已在论文所在的某个分类文件夹里的；对应不上文献库里的文献、文献已删除或不在任何分类里的，列在结果里
 async function syncFolders() {
   const lib = currentLibrary();
@@ -411,11 +511,15 @@ async function syncFolders() {
       picked: true, move: m
     })), { canPickMany: true, placeHolder: '按 ' + lib.name + ' 分类移动这些 Twig 文件（同一前缀的提问清单、参考答案一起移）' });
     if (!picked) return;
+    const pairs = [];                              // 移动过的文件：[旧路径, 新路径]
     for (const { move } of picked) {
-      const problem = await moveTwig(move, root, lib.field);
+      const problem = await moveTwig(move, root, lib.field, pairs);
       if (problem) skipped.push(path.relative(root, move.file) + '：' + problem);
       else moved++;
     }
+    // 灵感笔记和其他 Twig 文件里指向移走文件的链接跟着改
+    const after = f => { const p = pairs.find(([a]) => library.samePath(a, f)); return p ? p[1] : f; };
+    if (pairs.length) fixLinks([ideaRoot(), root].filter(d => d && fs.existsSync(d)), after);
   }
   const message = moved ? `已移动 ${moved} 篇 Twig` : '没有移动 Twig 文件';
   if (skipped.length) vscode.window.showInformationMessage(`${message}，${skipped.length} 篇没动`, { modal: true, detail: skipped.join('\n') });
@@ -444,7 +548,8 @@ async function planMoves(lib) {
 
 // 移动一篇 Twig 及同一前缀的文件到 m.to；返回没移动的原因，移好时返回空
 // 编号在目标文件夹里已被占用时顺延，提问清单、参考答案第一行标题里的编号跟着改；field 为文献库存编号的元信息字段
-async function moveTwig(m, root, field) {
+// pairs 收集移动过的文件 [旧路径, 新路径]，供之后改写其他文件里指向它们的链接
+async function moveTwig(m, root, field, pairs) {
   const from = path.dirname(m.file);
   const prefix = path.basename(m.file).slice(0, -'twig.md'.length);         // 如 01_Morrison等2009_
   const group = fs.readdirSync(from).filter(f => f.startsWith(prefix));
@@ -469,6 +574,7 @@ async function moveTwig(m, root, field) {
   if (panel) panel.dispose();                      // 旧位置的预览点不到原文了，关掉
 
   const moved = f => { const g = group.find(g => library.samePath(path.join(from, g), f)); return g ? target(g) : f; };
+  group.forEach(f => pairs.push([path.join(from, f), target(f)]));
   for (const f of group.filter(f => f.endsWith('.md'))) {   // 改写相对路径，PDF 和本机链接仍指向原来的文件
     const file = target(f);
     let text = tree.relocate(fs.readFileSync(file, 'utf8'), path.join(from, f), file, moved);

@@ -1,4 +1,4 @@
-// Twig：解析源文件，生成独立页面。
+// Twig：解析源文件，生成独立页面。源文件有两种：追问图 *_twig.md（节点组成的树）和灵感笔记 *_idea.md（一篇文档）
 // 命令行用法：node build.cjs 文件_twig.md [更多文件.md ...] → 在同一文件夹生成同名 .html
 //           node build.cjs --compare 旧文件.md 新文件.md → 列出整理后丢掉的节点和引文，不生成页面
 const fs = require('fs');
@@ -11,7 +11,13 @@ const path = require('path');
 const NODE = /^## (.+?)\s*\{#([\w-]+)([^}]*)\}\s*$/;
 const RELS = ['next', 'assoc'], STATUSES = ['pending', 'extra'];
 
-function parse(text) {
+// 灵感笔记按文件名认：*_idea.md；与 package.json 中预览按钮的 when 条件、extension.js 打开链接时的判断相同
+const isIdea = file => /_idea\.md$/i.test(file || '');
+const isTwig = file => /_twig\.md$/i.test(file || '');
+
+// file 为源文件路径，用来分辨两种文件；不给时按追问图解析
+// 灵感笔记：tree.doc 为全文（去掉开头的 # 标题，它没写元信息 title 时作标题），nodes 为空
+function parse(text, file) {
   text = text.replace(/\r\n/g, '\n');
   const tree = {};
   if (text.startsWith('---')) {                       // 开头的元信息
@@ -21,6 +27,15 @@ function parse(text) {
       if (i > 0) tree[line.slice(0, i).trim()] = line.slice(i + 1).trim();
     }
     text = text.slice(end + 4);
+  }
+  tree.figures = figurePages(tree.figures || '');
+  tree.refs = refLinks(tree.refs || '');
+  if (isIdea(file)) {
+    const title = text.match(/^[ \t]*# (.+)$/m);
+    if (title && !tree.title) tree.title = title[1].trim();
+    tree.doc = (title ? text.replace(title[0], '') : text).trim();
+    tree.nodes = []; tree.bad = [];
+    return tree;
   }
   const nodes = [];
   tree.bad = [];                                       // 以 ## 开头却不是合法节点标题的行
@@ -37,8 +52,6 @@ function parse(text) {
   }
   for (const n of nodes) n.body = n.body.join('\n').trim();
   tree.nodes = nodes;
-  tree.figures = figurePages(tree.figures || '');
-  tree.refs = refLinks(tree.refs || '');
   return tree;
 }
 
@@ -66,10 +79,11 @@ function refLinks(line) {
   return map;
 }
 
-// 来源标签【论文 · Fletcher 1962 p.12「…」；KC00】里的论文名字：按“；”分开，去掉页码部分。标签写法与 viewer.html 中的 SRC 相同
+// 来源标签【论文 · Fletcher 1962 p.12「…」；KC00】里的论文名字：按“；”分开，去掉页码部分
+// 标签可以单独一行，也可以写在句末；写法与 viewer.html 中的 SRC、INLINE_SRC 相同
 function paperNames(body) {
   const names = [];
-  for (const [, where] of body.matchAll(/^【论文\s*·\s*(.+)】\s*$/gm)) {
+  for (const [, where] of body.matchAll(/【论文\s*[·：:]\s*([^】]+)】/g)) {
     for (const part of where.split(/[；;]/)) names.push(part.replace(/\s*p\.\d.*$/, '').trim());
   }
   return names.filter(Boolean);
@@ -131,11 +145,45 @@ function relocate(text, from, to, moved = f => f) {
   return head + body;
 }
 
-// 找出写错的节点标题、父节点、连线、状态、卡片链接、元信息 current，以及写了 pdf 后没登记页码的图表
-// 给出 Twig 文件路径时，再检查卡片里链接的本机文件是否存在
-function check(tree, twigFile) {
-  const ids = new Set(tree.nodes.map(n => n.id));
+// 链接到另一个 Twig 文件的位置时，# 后的部分对不对：*_twig.md#节点id 要有这个节点，*_idea.md#标题 要有以它开头的标题
+// 与 extension.js 的 openLink、viewer.html 的 focus 定位方式相同。没有问题时返回空
+function anchorProblem(file, anchor) {
+  if (!anchor || !(isTwig(file) || isIdea(file))) return '';
+  const target = parse(fs.readFileSync(file, 'utf8'), file);
+  if (isTwig(file)) return target.nodes.some(n => n.id === anchor) ? '' : `${path.basename(file)} 里没有节点 ${anchor}`;
+  const titles = [...target.doc.matchAll(/^#{2,4}\s+(.+?)\s*$/gm)].map(m => m[1]);
+  return titles.some(t => t.startsWith(anchor)) ? '' : `${path.basename(file)} 里没有以“${anchor}”开头的标题`;
+}
+
+// 正文里的本机链接：文件不存在，或链接到另一个 Twig 文件的位置不对时，返回问题；where 为出现的位置，如“节点 q1”
+function linkProblems(body, file, where) {
   const problems = [];
+  for (const [, , angled, plain] of body.replace(/`[^`]+`/g, '').matchAll(LINK)) {
+    const target = angled || plain;
+    if (!isLocal(target)) continue;
+    const { file: linked, anchor } = localLink(target, file);
+    if (!fs.existsSync(linked)) problems.push(`${where}链接的本机文件不存在：${linked}`);
+    else if (anchorProblem(linked, anchor)) problems.push(`${where}的链接 ${target} 指不到位置：${anchorProblem(linked, anchor)}`);
+  }
+  return problems;
+}
+
+// 找出写错的节点标题、父节点、连线、状态、卡片链接、元信息 current，以及写了 pdf 后没登记页码的图表
+// 给出源文件路径时，再检查链接的本机文件是否存在、链接到其他 Twig 文件的位置对不对；灵感笔记只查链接和 refs
+function check(tree, twigFile) {
+  const problems = [];
+  const unregistered = (body, where) => paperNames(body).filter(name => !tree.refs[name])
+    .forEach(name => problems.push(`${where}引用的论文“${name}”没有登记在元信息 refs`));
+  const refPages = () => Object.entries(tree.refs).forEach(([name, ref]) => {
+    if (ref.pdf && !ref.firstPage) problems.push(`元信息 refs 中“${name}”写了 PDF 路径，缺少第 1 页的期刊页码，标签里该文的页码点不到原文`);
+  });
+  if (tree.doc !== undefined) {
+    unregistered(tree.doc, '正文');
+    if (twigFile) problems.push(...linkProblems(tree.doc, twigFile, '正文'));
+    refPages();
+    return problems;
+  }
+  const ids = new Set(tree.nodes.map(n => n.id));
   const missing = new Set();
   for (const line of tree.bad) problems.push(`“${line}”不是合法的节点标题（id 只能用英文字母、数字、_、-；卡片里的小标题用 ###）`);
   if (tree.current && !ids.has(tree.current)) problems.push(`元信息 current 指向不存在的节点 ${tree.current}`);
@@ -147,22 +195,11 @@ function check(tree, twigFile) {
     for (const [, target] of n.body.matchAll(/\]\(#([\w-]+)\)/g)) {
       if (!ids.has(target)) problems.push(`节点 ${n.id} 链接到不存在的 ${target}`);
     }
-    if (twigFile) {
-      for (const [, , angled, plain] of n.body.replace(/`[^`]+`/g, '').matchAll(LINK)) {
-        const target = angled || plain;
-        if (!isLocal(target)) continue;
-        const { file } = localLink(target, twigFile);
-        if (!fs.existsSync(file)) problems.push(`节点 ${n.id} 链接的本机文件不存在：${file}`);
-      }
-    }
+    if (twigFile) problems.push(...linkProblems(n.body, twigFile, `节点 ${n.id} `));
     if (tree.pdf) figureRefs(n.body).forEach(k => { if (!tree.figures[k]) missing.add(k.replace(' ', '. ')); });
-    for (const name of paperNames(n.body)) {
-      if (!tree.refs[name]) problems.push(`节点 ${n.id} 引用的论文“${name}”没有登记在元信息 refs`);
-    }
+    unregistered(n.body, `节点 ${n.id} `);
   }
-  for (const [name, ref] of Object.entries(tree.refs)) {
-    if (ref.pdf && !ref.firstPage) problems.push(`元信息 refs 中“${name}”写了 PDF 路径，缺少第 1 页的期刊页码，标签里该文的页码点不到原文`);
-  }
+  refPages();
   if (missing.size) problems.push(`元信息 figures 缺少这些图表的页码，点不到原文：${[...missing].sort((a, b) => a.localeCompare(b, 'en', { numeric: true })).join('、')}`);
   return problems;
 }
@@ -195,20 +232,20 @@ function toHtml(tree) {
   return template.replace('__DATA__', () => data);
 }
 
-module.exports = { parse, check, compare, toHtml, isLocal, localLink, relocate };
+module.exports = { parse, check, compare, toHtml, isLocal, localLink, relocate, isTwig, isIdea };
 
 if (require.main === module && process.argv[2] === '--compare') {
   const files = process.argv.slice(3);
-  const [before, after] = files.map(f => parse(fs.readFileSync(f, 'utf8')));
+  const [before, after] = files.map(f => parse(fs.readFileSync(f, 'utf8'), f));
   const problems = compare(before, after).concat(check(after, files[1]));
   problems.forEach(p => console.log('  ! ' + p));
   console.log(problems.length ? `共 ${problems.length} 条，逐条对照删除清单` : '没有丢失的节点和引文，格式无误');
 } else if (require.main === module) {
   for (const file of process.argv.slice(2)) {
-    const tree = parse(fs.readFileSync(file, 'utf8'));
+    const tree = parse(fs.readFileSync(file, 'utf8'), file);
     check(tree, file).forEach(p => console.log('  ! ' + p));
     const output = file.replace(/\.md$/, '.html');
     fs.writeFileSync(output, toHtml(tree));
-    console.log(`已生成 ${output}（${tree.nodes.length} 个节点）`);
+    console.log(`已生成 ${output}` + (tree.doc === undefined ? `（${tree.nodes.length} 个节点）` : '（灵感笔记）'));
   }
 }

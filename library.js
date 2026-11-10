@@ -11,7 +11,7 @@
 //   folderPapers(key)    直接放在某个分类里的论文 → [论文]
 //   collections()        全部分类，一次整理多篇时先取一次，传给 folderPaths
 //   folderPaths(p, all)  论文所在的各个分类，每个为从顶层往下的名称列表 → [[名称]]
-//   home(pdf)            没开工作区时 Twig阅读整理 放在哪个文件夹下 → 路径 | null
+//   home(pdf)            没开工作区时 Twig追问整理 放在哪个文件夹下 → 路径 | null
 //   paperKey(meta, file) Twig 文件对应的文献编号 → 编号 | null
 //   pdfs(key)            一篇文献的全部 PDF → [{ title, file }]，file 为本地绝对路径
 // 论文：{ key, authors, year, title, citation, firstPage }，authors 为作者简称（如 Morrison 等），citation 为完整引文（见 citation）
