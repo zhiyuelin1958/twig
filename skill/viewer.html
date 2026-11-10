@@ -200,9 +200,10 @@ var PAGE = /p\.(\d+)([–-]\d+)?(?:「([^」]+)」)?/g;
 var REF = /\b(Fig|Tab)(?:s|ures?|les?)?\.?\s*([A-Z]?\d+[a-z]?(?:\s*(?:,|，|、|–|-|and)\s*[A-Z]?\d+[a-z]?)*)/g;
 
 function attr(s) { return s.replace(/"/g, '&quot;'); }
-function pageLink(page, text, title, quote) {
+// ref 为空时打开本文 PDF；为 refs 中的论文名字时打开那篇的本机 PDF（【论文】标签里的页码）
+function pageLink(page, text, title, quote, ref) {
   return '<a class="pg" data-page="' + page + '"' + (quote ? ' data-search="' + attr(quote) + '"' : '') +
-    ' title="' + attr(title) + '">' + text + '</a>';
+    (ref ? ' data-ref="' + attr(ref) + '"' : '') + ' title="' + attr(title) + '">' + text + '</a>';
 }
 function pageRef(all, p, range, quote) {
   var title = quote ? '打开原文第 ' + p + ' 页，定位到“' + quote + '”' : '打开原文第 ' + p + ' 页';
@@ -217,18 +218,32 @@ function figRef(all, kind, nums) {
   return all.slice(0, all.length - nums.length) +                      // 多个图表：每个编号各自可点
     nums.replace(/[A-Z]?\d+[a-z]?/g, function (num) { return link(num, num); });
 }
-// 【论文】标签：登记在元信息 refs 的名字做成外部链接；标签里的页码指那篇论文而不是本文，只显示，引文悬停可见
+// 【论文】标签：登记在元信息 refs 的名字做成链接（build.cjs 的 refLinks 已解析成 { url, pdf, firstPage }）
+// 标签按“；”分段，段首是登记过的名字时，该段及其后只有页码的段都属于这篇，如【论文 · Khain 2015 p.249「…」；p.253「…」】
+// 预览中该文登记了本机 PDF：名字打开那个 PDF，页码（还需登记第 1 页的期刊页码）跳到那篇的对应页并定位引文
+// 其余情况：名字在浏览器打开 DOI 或网址，页码只显示，引文悬停可见
 function paperTag(where) {
-  var keep = [], s = esc(where);
-  Object.keys(T.refs || {}).sort(function (a, b) { return b.length - a.length; }).forEach(function (name) {
-    var url = T.refs[name];
-    keep.push('<a class="ext" href="' + attr(url) + '" target="_blank" title="在浏览器打开 ' + attr(url) + '">' + esc(name) + '</a>');
-    s = s.split(esc(name)).join('\u0000' + (keep.length - 1) + '\u0000');
-  });
-  s = s.replace(PAGE, function (all, p, range, quote) {
-    return quote ? '<span title="' + attr(quote) + '">p.' + p + (range || '') + '</span>' : all;
-  });
-  return s.replace(/\u0000(\d+)\u0000/g, function (_, i) { return keep[i]; });
+  var refs = T.refs || {}, current = null;
+  var names = Object.keys(refs).sort(function (a, b) { return b.length - a.length; });
+  return where.split(/([；;])/).map(function (part) {
+    if (part === '；' || part === ';') return part;
+    var lead = part.trim(), keep = [], s = esc(part);
+    if (!/^p\.\d/.test(lead)) current = names.filter(function (name) { return lead.indexOf(name) === 0; })[0] || null;
+    names.forEach(function (name) {
+      var ref = refs[name], local = vscodeApi && ref.pdf;
+      if (!ref.url && !local) return;
+      keep.push('<a class="ext"' + (ref.url ? ' href="' + attr(ref.url) + '" target="_blank"' : '') +
+        (local ? ' data-ref="' + attr(name) + '" title="打开本机 PDF ' + attr(ref.pdf) + '"' : ' title="在浏览器打开 ' + attr(ref.url) + '"') +
+        '>' + esc(name) + '</a>');
+      s = s.split(esc(name)).join('\u0000' + (keep.length - 1) + '\u0000');
+    });
+    var ref = current && refs[current], local = vscodeApi && ref && ref.pdf && ref.firstPage;
+    s = s.replace(PAGE, function (all, p, range, quote) {
+      if (local) return pageLink(p, 'p.' + p + (range || ''), '打开 ' + current + ' 第 ' + p + ' 页' + (quote ? '，定位到“' + quote + '”' : ''), quote, current);
+      return quote ? '<span title="' + attr(quote) + '">p.' + p + (range || '') + '</span>' : all;
+    });
+    return s.replace(/\u0000(\d+)\u0000/g, function (_, i) { return keep[i]; });
+  }).join('');
 }
 // 只在 VSCode 预览且元信息写了 pdf 时做成链接；导出的网页只去掉引文，悬停可见
 function pages(s) {
@@ -445,9 +460,12 @@ document.getElementById('panel').addEventListener('click', function (e) {   // �
   var a = e.target.closest('[data-id]');
   if (a && byId[a.dataset.id]) open(byId[a.dataset.id]);
   var pg = e.target.closest('[data-page]');
-  if (pg) vscodeApi.postMessage({ page: +pg.dataset.page, search: pg.dataset.search });   // 交给扩展打开 PDF
+  if (pg) vscodeApi.postMessage({ page: +pg.dataset.page, search: pg.dataset.search, ref: pg.dataset.ref });   // 交给扩展打开 PDF
   var ext = e.target.closest('a.ext');
-  if (ext && vscodeApi) { e.preventDefault(); vscodeApi.postMessage({ url: ext.href }); }   // 预览里交给扩展用浏览器打开
+  if (ext && vscodeApi) {                                              // 预览里交给扩展：有本机 PDF 的论文打开 PDF，其余用浏览器打开
+    e.preventDefault();
+    vscodeApi.postMessage(ext.dataset.ref ? { ref: ext.dataset.ref } : { url: ext.href });
+  }
 });
 function close() {
   document.body.classList.remove('panel-open');

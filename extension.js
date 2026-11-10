@@ -53,7 +53,7 @@ async function preview(uri) {
   panels.set(key, panel);
   panel.onDidDispose(() => panels.delete(key));
   panel.webview.onDidReceiveMessage(m => {
-    if (m.page) openPdf(uri, m.page, m.search);
+    if (m.page || m.ref) openPdf(uri, m.page, m.search, m.ref);
     if (m.url && /^https?:/.test(m.url)) vscode.env.openExternal(vscode.Uri.parse(m.url));   // 外部论文、网址：用浏览器打开
   });
 }
@@ -61,16 +61,32 @@ async function preview(uri) {
 // 点卡片里的页码或图表：用 PDF Viewer 扩展打开元信息 pdf 指向的论文，并跳到对应页
 // 期刊页码减去 firstPage（PDF 第 1 页对应的期刊页码）再加 1，得到 PDF 页码
 // 带引文 p.xxx「…」时，让 PDF Viewer 里的 pdf.js 从该页起搜索这句原文并高亮，定位到行
-async function openPdf(uri, page, search) {
-  if (!vscode.extensions.getExtension('mathematic.vscode-pdf')) {
-    vscode.window.showWarningMessage('跳转原文需要安装 PDF Viewer 扩展（mathematic.vscode-pdf）');
-    return;
-  }
+// ref 是元信息 refs 中的论文名字（点【论文】标签）：改开那篇登记的本机 PDF，按它的第 1 页期刊页码换算；没有 page 时打开第 1 页
+async function openPdf(uri, page, search, ref) {
   const doc = await vscode.workspace.openTextDocument(uri);
   const meta = tree.parse(doc.getText());
-  const file = await findPdf(meta, uri.fsPath);
-  if (!file) return;
-  const pdfPage = page - (Number(meta.firstPage) || 1) + 1;
+  let file, first;
+  if (ref) {
+    const r = meta.refs[ref];
+    if (!r) return;
+    file = r.pdf ? path.resolve(path.dirname(uri.fsPath), r.pdf) : '';
+    if (!file || !fs.existsSync(file) || !vscode.extensions.getExtension('mathematic.vscode-pdf')) {
+      const why = file && !fs.existsSync(file) ? '找不到 ' + ref + ' 的本机 PDF：' + file : '打开本机 PDF 需要安装 PDF Viewer 扩展（mathematic.vscode-pdf）';
+      if (r.url) { vscode.window.showInformationMessage(why + '，改在浏览器打开'); vscode.env.openExternal(vscode.Uri.parse(r.url)); }
+      else vscode.window.showWarningMessage(why);
+      return;
+    }
+    first = r.firstPage;
+  } else {
+    if (!vscode.extensions.getExtension('mathematic.vscode-pdf')) {
+      vscode.window.showWarningMessage('跳转原文需要安装 PDF Viewer 扩展（mathematic.vscode-pdf）');
+      return;
+    }
+    file = await findPdf(meta, uri.fsPath);
+    if (!file) return;
+    first = Number(meta.firstPage);
+  }
+  const pdfPage = page ? page - (first || 1) + 1 : 1;
 
   // 同一篇 PDF 已打开时，PDF Viewer 不会按新页码跳转，所以先关掉旧标签页，在原位置重新打开
   let column = vscode.ViewColumn.Beside;

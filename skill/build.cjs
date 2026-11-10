@@ -49,14 +49,19 @@ function figurePages(line) {
   return map;
 }
 
-// 外部论文的链接。元信息写成 refs: Fletcher 1962=10.1007/xxx, KC00=https://… → { 'Fletcher 1962': 'https://doi.org/10.1007/xxx', KC00: 'https://…' }
+// 外部论文的链接。每篇写成 名字=DOI 或网址，本机有 PDF 时再用“|”接 PDF 路径（相对 Twig 文件）和该 PDF 第 1 页的期刊页码：
+// refs: Fletcher 1962=10.1007/xxx, KC00=https://…, Khain 2015=10.1002/xxx | ../pdf/Khain.pdf | 247
+// → { 'Fletcher 1962': { url: 'https://doi.org/10.1007/xxx' }, …, 'Khain 2015': { url: …, pdf: '../pdf/Khain.pdf', firstPage: 247 } }
 function refLinks(line) {
   const map = {};
-  for (const item of line.split(/,\s*(?=[^,=]+=)/)) {
+  for (const item of line.split(/,\s*(?=[^,=|]+=)/)) {
     const i = item.indexOf('=');
     if (i <= 0) continue;
-    const value = item.slice(i + 1).trim();
-    map[item.slice(0, i).trim()] = /^https?:/.test(value) ? value : 'https://doi.org/' + value;
+    const [link, pdf, first] = item.slice(i + 1).split('|').map(s => s.trim());
+    const ref = { url: !link ? '' : /^https?:/.test(link) ? link : 'https://doi.org/' + link };
+    if (pdf) ref.pdf = pdf;
+    if (+first) ref.firstPage = +first;
+    map[item.slice(0, i).trim()] = ref;
   }
   return map;
 }
@@ -99,6 +104,9 @@ function check(tree) {
     for (const name of paperNames(n.body)) {
       if (!tree.refs[name]) problems.push(`节点 ${n.id} 引用的论文“${name}”没有登记在元信息 refs`);
     }
+  }
+  for (const [name, ref] of Object.entries(tree.refs)) {
+    if (ref.pdf && !ref.firstPage) problems.push(`元信息 refs 中“${name}”写了 PDF 路径，缺少第 1 页的期刊页码，标签里该文的页码点不到原文`);
   }
   if (missing.size) problems.push(`元信息 figures 缺少这些图表的页码，点不到原文：${[...missing].sort((a, b) => a.localeCompare(b, 'en', { numeric: true })).join('、')}`);
   return problems;
