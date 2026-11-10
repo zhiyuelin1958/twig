@@ -172,7 +172,9 @@ function linkProblems(body, file, where) {
 // 给出源文件路径时，再检查链接的本机文件是否存在、链接到其他 Twig 文件的位置对不对；灵感笔记只查链接和 refs
 function check(tree, twigFile) {
   const problems = [];
-  const unregistered = (body, where) => paperNames(body).filter(name => !tree.refs[name])
+  // 名字后可接节号、式号，如“K15 §2 p.253”：以登记过的名字开头就算登记了，与 viewer.html 的 paperTag 认名字的办法相同
+  const known = name => Object.keys(tree.refs).some(r => name === r || name.startsWith(r + ' '));
+  const unregistered = (body, where) => paperNames(body).filter(name => !known(name))
     .forEach(name => problems.push(`${where}引用的论文“${name}”没有登记在元信息 refs`));
   const refPages = () => Object.entries(tree.refs).forEach(([name, ref]) => {
     if (ref.pdf && !ref.firstPage) problems.push(`元信息 refs 中“${name}”写了 PDF 路径，缺少第 1 页的期刊页码，标签里该文的页码点不到原文`);
