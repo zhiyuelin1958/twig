@@ -99,6 +99,38 @@ function localLink(target, twigFile) {
   return { file: path.resolve(path.dirname(twigFile), p), anchor: i < 0 ? '' : decode(target.slice(i + 1)) };
 }
 
+// 文件移到别的文件夹后改写其中的相对路径，使之仍指向原来的文件：元信息 pdf、refs 里的 PDF 路径，以及正文的本机链接 [文字](路径)
+// from、to 为移动前后的文件路径；绝对路径、网址和 `代码` 里的不动；moved 把一起移动的文件的旧路径换成新路径，可省略。扩展整理文件夹时用
+function relocate(text, from, to, moved = f => f) {
+  const absolute = p => /^(file:|[a-z]:[\\/]|[\\/])/i.test(p);
+  const rel = file => {                               // 相对新位置的路径，用 / 分隔；不在同一个盘时用绝对路径
+    file = moved(file);
+    const r = path.relative(path.dirname(to), file);
+    return (path.isAbsolute(r) ? file : r).split(path.sep).join('/');
+  };
+  const pdf = p => absolute(p) ? p : rel(path.resolve(path.dirname(from), p));
+  const link = target => {
+    const i = target.indexOf('#');
+    return absolute(target) ? target : rel(localLink(target, from).file) + (i < 0 ? '' : target.slice(i));
+  };
+  const close = text.startsWith('---') ? text.indexOf('\n---', 3) : -1;
+  const end = close < 0 ? 0 : close + 4;
+  const head = text.slice(0, end)
+    .replace(/^(pdf:[ \t]*)(\S.*?)[ \t]*$/m, (_, key, p) => key + pdf(p))
+    .replace(/^(refs:)(.*)$/m, (_, key, line) => key + line.split(/(,\s*)(?=[^,=|]+=)/).map(item => {
+      const parts = item.split('|');                  // 名字=DOI | PDF 路径 | 页码，见 refLinks
+      if (parts.length > 1 && parts[1].trim()) parts[1] = parts[1].replace(parts[1].trim(), pdf);
+      return parts.join('|');
+    }).join(''));
+  const body = text.slice(end).replace(new RegExp('`[^`]+`|' + LINK.source, 'g'), (all, label, angled, plain) => {
+    const target = angled || plain;
+    if (!target || !isLocal(target)) return all;
+    const now = link(target);
+    return now === target ? all : `[${label}](${angled || /[\s()<>]/.test(now) ? '<' + now + '>' : now})`;
+  });
+  return head + body;
+}
+
 // 找出写错的节点标题、父节点、连线、状态、卡片链接、元信息 current，以及写了 pdf 后没登记页码的图表
 // 给出 Twig 文件路径时，再检查卡片里链接的本机文件是否存在
 function check(tree, twigFile) {
@@ -163,7 +195,7 @@ function toHtml(tree) {
   return template.replace('__DATA__', () => data);
 }
 
-module.exports = { parse, check, compare, toHtml, isLocal, localLink };
+module.exports = { parse, check, compare, toHtml, isLocal, localLink, relocate };
 
 if (require.main === module && process.argv[2] === '--compare') {
   const files = process.argv.slice(3);

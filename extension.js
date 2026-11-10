@@ -381,7 +381,7 @@ async function choosePdf() {
 }
 
 // 整理文件夹：文献库里分类改名、移动，或论文换了分类后，把 Twig 文件移到论文现在所在分类的文件夹
-// 同一前缀的文件（如 01_Morrison等2009_提问清单.md、导出的 .html）一起移；移动后改写 pdf 的相对路径，没写文献编号的补上
+// 同一前缀的文件（如 01_Morrison等2009_提问清单.md、导出的 .html）一起移；移动后改写 pdf、refs 里的 PDF 路径和正文本机链接的相对路径，没写文献编号的补上
 // 不动的：已在论文所在的某个分类文件夹里的；对应不上文献库里的文献、文献已删除或不在任何分类里的，列在结果里
 async function syncFolders() {
   const lib = currentLibrary();
@@ -468,17 +468,13 @@ async function moveTwig(m, root, field) {
   const panel = panels.get(vscode.Uri.file(m.file).toString());
   if (panel) panel.dispose();                      // 旧位置的预览点不到原文了，关掉
 
-  const twig = target(path.basename(m.file));
-  let text = fs.readFileSync(twig, 'utf8');
-  const meta = tree.parse(text);
-  if (meta.pdf) text = text.replace(/^pdf:.*$/m, () => 'pdf: ' + library.pdfPath(path.resolve(from, meta.pdf), twig));
-  if (!meta[field]) text = library.setKey(text, field, m.key);
-  fs.writeFileSync(twig, text);
-  if (renumber) {
-    for (const f of group.filter(f => f.endsWith('.md') && !f.endsWith('twig.md'))) {
-      const file = target(f);
-      fs.writeFileSync(file, fs.readFileSync(file, 'utf8').replace(/^# \d+ /, '# ' + newNumber + ' '));
-    }
+  const moved = f => { const g = group.find(g => library.samePath(path.join(from, g), f)); return g ? target(g) : f; };
+  for (const f of group.filter(f => f.endsWith('.md'))) {   // 改写相对路径，PDF 和本机链接仍指向原来的文件
+    const file = target(f);
+    let text = tree.relocate(fs.readFileSync(file, 'utf8'), path.join(from, f), file, moved);
+    if (f === path.basename(m.file)) { if (!tree.parse(text)[field]) text = library.setKey(text, field, m.key); }
+    else if (renumber) text = text.replace(/^# \d+ /, '# ' + newNumber + ' ');
+    fs.writeFileSync(file, text);
   }
   for (let d = from; !library.samePath(d, root) && fs.readdirSync(d).length === 0; d = path.dirname(d)) fs.rmdirSync(d);   // 删掉搬空的文件夹
   return '';

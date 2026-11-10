@@ -30,7 +30,7 @@
 
 | 文件 | 职责 |
 |---|---|
-| `skill/build.cjs` | 解析源文件（`parse`、`figurePages`、`refLinks`）、检查格式（`check`）、比对整理前后（`compare`）、生成页面（`toHtml`）；命令行和扩展共用 |
+| `skill/build.cjs` | 解析源文件（`parse`、`figurePages`、`refLinks`）、检查格式（`check`）、比对整理前后（`compare`）、改写移动后的相对路径（`relocate`）、生成页面（`toHtml`）；命令行和扩展共用 |
 | `skill/viewer.html` | 页面：样式和脚本，按注释标题分节（公式、跳转原文、行内格式、块级排版、画树、知识卡片、缩放）；KaTeX 版本在 `<head>` |
 | `extension.js` | 只放与 VSCode 交互的部分：命令、预览面板、新建时的搜索框、打开 PDF（`openPdf`）、在浏览器打开外部链接、按文献库分类整理文件夹（`syncFolders`）、安装 skill |
 | `library.js` | 文献库接口（各文献库模块导出哪些成员，写在文件开头）、按设置选文献库，以及与具体文献库无关的部分：引文格式、文件名、把引文、`pdf`、文献编号、`firstPage` 填进模板；不用 vscode 接口 |
