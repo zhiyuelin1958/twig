@@ -6,15 +6,13 @@
 //   help                 { 出错原因: { label, detail } }，出错时 error.reason 为其中一个原因
 //   search(q)            按标题、作者、年份搜索 → [论文]
 //   recent(n)            最近改动的 n 篇 → [论文]
-//   item(key)            按编号取一篇 → 论文 | null（没有或已删除）
 //   folders(parent)      分类：不给 parent 为顶层，否则为其子分类 → [{ key, name, folders, papers }]，后两项为数量
 //   folderPapers(key)    直接放在某个分类里的论文 → [论文]
-//   collections()        全部分类，一次整理多篇时先取一次，传给 folderPaths
-//   folderPaths(p, all)  论文所在的各个分类，每个为从顶层往下的名称列表 → [[名称]]
 //   home(pdf)            没开工作区时 Twig追问整理 放在哪个文件夹下 → 路径 | null
 //   paperKey(meta, file) Twig 文件对应的文献编号 → 编号 | null
 //   pdfs(key)            一篇文献的全部 PDF → [{ title, file }]，file 为本地绝对路径
 // 论文：{ key, authors, year, title, citation, firstPage }，authors 为作者简称（如 Morrison 等），citation 为完整引文（见 citation）
+const fs = require('fs');
 const path = require('path');
 
 // 按设置 twig.library 取文献库；options.bibFile 为 bibtex 用的 .bib 文件（绝对路径）
@@ -43,9 +41,20 @@ function firstPage(pages) {
 // 作者简称与年份，如 Morrison 等 (2009)
 function label(p) { return p.authors + ' (' + p.year + ')'; }
 
-// 文件名，如 01_Morrison等2009_twig.md
-function fileName(p, number) {
-  return String(number).padStart(2, '0') + '_' + p.authors.replace(/\s+/g, '') + p.year + '_twig.md';
+// 生成不重名的 Twig 文件名，如 Morrison等2009_twig.md；同名时依次加 b、c…（Morrison等2015b_twig.md）
+// p 为空（从 PDF 新建或空白模板）时用默认名“作者年份”
+function fileName(p, folder) {
+  const base = p ? p.authors.replace(/[\\/:*?"<>|\s]+/g, '') + p.year : '作者年份'; // 去掉空格和文件名非法字符
+  let name = base + '_twig.md';
+  if (!folder || !fs.existsSync(path.join(folder, name))) return name;            // 根目录还没有同名文件，直接用
+  for (const suffix of 'bcdefghijklmnopqrstuvwxyz') {                              // 同名时从 b 起顺延字母后缀
+    name = base + suffix + '_twig.md';
+    if (!fs.existsSync(path.join(folder, name))) return name;
+  }
+  for (let i = 2; ; i++) {                                                         // 极端情况用完字母后改用数字后缀
+    name = base + '_' + i + '_twig.md';
+    if (!fs.existsSync(path.join(folder, name))) return name;
+  }
 }
 
 // 在 Twig 文本里写入文献编号：已有该字段时改写；模板里空的 zotero: 是编号的位置，换成该字段；都没有时加在 pdf 一行后

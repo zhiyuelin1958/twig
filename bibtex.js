@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const library = require('./library.js');
 
-// 各种出错原因的说明，显示在选论文的列表顶部和整理文件夹的提示里
+// 各种出错原因的说明，显示在选论文的列表顶部
 const help = {
   nofile: { label: '没有设置 .bib 文件', detail: '在设置里搜索 twig.bibFile，填上 .bib 文件的路径' },
   missing: { label: '找不到 .bib 文件', detail: '检查设置 twig.bibFile 里的路径' }
@@ -32,7 +32,6 @@ function open(bibFile) {
       return (await load()).papers.filter(p => words.every(w => p.text.includes(w))).slice(0, 20);
     },
     async recent(n) { return (await load()).byRecent.slice(0, n); },
-    async item(key) { return (await load()).byKey.get(key) || null; },
     async folders(parent) {
       const lib = await load();
       return lib.groups.filter(g => g.parent === (parent ?? null))
@@ -42,15 +41,6 @@ function open(bibFile) {
     },
     async folderPapers(key) {
       return (await load()).papers.filter(p => p.groups.includes(key)).sort((a, b) => a.title.localeCompare(b.title));
-    },
-    async collections() { return load(); },
-    async folderPaths(p, lib) {
-      lib = lib || await load();
-      return p.groups.map(id => {
-        const names = [];
-        for (let g = lib.groupById.get(id); g; g = lib.groupById.get(g.parent)) names.unshift(g.name);
-        return names;
-      });
     },
     async home() { return bibFile ? path.dirname(bibFile) : null; },
     // 元信息 citekey；没写时按 pdf 指向的文件找 file 字段里有它的条目

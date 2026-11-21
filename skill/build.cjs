@@ -114,7 +114,7 @@ function localLink(target, twigFile) {
 }
 
 // 文件移到别的文件夹后改写其中的相对路径，使之仍指向原来的文件：元信息 pdf、refs 里的 PDF 路径，以及正文的本机链接 [文字](路径)
-// from、to 为移动前后的文件路径；绝对路径、网址和 `代码` 里的不动；moved 把一起移动的文件的旧路径换成新路径，可省略。扩展整理文件夹时用
+// from、to 为移动前后的文件路径；绝对路径、网址和 `代码` 里的不动；moved 把一起移动的文件的旧路径换成新路径，可省略。扩展改名旧文件夹时用
 function relocate(text, from, to, moved = f => f) {
   const absolute = p => /^(file:|[a-z]:[\\/]|[\\/])/i.test(p);
   const rel = file => {                               // 相对新位置的路径，用 / 分隔；不在同一个盘时用绝对路径

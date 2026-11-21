@@ -15,7 +15,7 @@ Twig 靠 AI 边读边改 `*_twig.md`，所以文件放在哪里会影响使用�
 ```
 科研/                  ← 用 VSCode 打开这个文件夹
 ├── Zotero/            ← Zotero 数据文件夹，PDF 在其中的 storage/
-├── Twig追问整理/      ← Twig 文件，按文献库的分类建子文件夹
+├── Twig追问整理/      ← Twig 文件，平铺
 └── Twig灵感笔记/      ← 灵感笔记，按主题建子文件夹
 ```
 

@@ -1,4 +1,4 @@
-// Zotero 文献库：通过 Zotero 7 起自带的本地 API 查文献、取 PDF 路径和所在分类；接口见 library.js
+// Zotero 文献库：通过 Zotero 7 起自带的本地 API 查文献、列分类和取 PDF 路径；接口见 library.js
 // 本地 API 需要 Zotero 开着，并在 设置 → 高级 勾选“允许此计算机上的其他应用程序与 Zotero 通信”
 const path = require('path');
 const { fileURLToPath } = require('url');
@@ -17,7 +17,7 @@ async function get(url) {
   return res.json();
 }
 
-// 各种出错原因的说明，显示在选论文的列表顶部和整理文件夹的提示里
+// 各种出错原因的说明，显示在选论文的列表顶部
 const help = {
   offline: { label: '没有连上 Zotero', detail: '先打开 Zotero' },
   disabled: { label: 'Zotero 没有开放本地接口', detail: '在 Zotero 设置 → 高级 勾选“允许此计算机上的其他应用程序与 Zotero 通信”' }
@@ -25,14 +25,14 @@ const help = {
 
 // ---------- 论文 ----------
 
-// 统一的论文对象（见 library.js）；collections 为所在分类的编号，folderPaths 用
+// 统一的论文对象（见 library.js）
 function paper(it) {
   const d = it.data;
   const names = (d.creators || []).filter(c => c.creatorType === 'author').map(c => c.lastName || c.name);
   return {
     key: it.key, authors: authors(it), year: year(it), title: d.title,
     citation: library.citation({ names, year: year(it), title: d.title, venue: d.publicationTitle, volume: d.volume, pages: d.pages }),
-    firstPage: library.firstPage(d.pages), collections: d.collections || []
+    firstPage: library.firstPage(d.pages)
   };
 }
 
@@ -41,7 +41,7 @@ function papers(items) {
   return items.filter(it => !['attachment', 'note', 'annotation'].includes(it.data.itemType)).map(paper);
 }
 
-// 按编号取原始条目（文献或附件）；Zotero 里没有或已移进回收站时为 null
+// 按编号取原始条目（附件反查所属文献时用）；Zotero 里没有或已移进回收站时为 null
 async function raw(key) {
   try {
     const it = await get('/items/' + key + '?format=json');
@@ -50,12 +50,6 @@ async function raw(key) {
     if (e.status === 404) return null;
     throw e;
   }
-}
-
-// 按编号取一篇论文；没有、已删除或不是文献条目时为 null
-async function item(key) {
-  const it = await raw(key);
-  return it ? papers([it])[0] || null : null;
 }
 
 // 在整个文献库里按标题、作者、年份搜索，最近改动的在前
@@ -81,26 +75,6 @@ async function folders(parent) {
 // 直接放在某个文件夹里的论文，按标题排序
 async function folderPapers(key) {
   return papers(await get('/collections/' + key + '/items/top?format=json&sort=title'));
-}
-
-// 全部文件夹：{ 编号: { name, parent } }，不含回收站里的
-async function collections() {
-  const all = {};
-  for (const c of await get('/collections?format=json')) {
-    if (!c.data.deleted) all[c.key] = { name: c.data.name, parent: c.data.parentCollection };
-  }
-  return all;
-}
-
-// 一篇论文所在的各个文件夹，每个写成从顶层往下的名称列表，如 [['大气科学文献1', '2026暑假']]
-// 一次处理多篇时，先用 collections() 取一次全部文件夹传进来
-async function folderPaths(p, all) {
-  all = all || await collections();
-  return p.collections.filter(key => all[key]).map(key => {
-    const names = [];
-    for (let k = key; k && all[k]; k = all[k].parent) names.unshift(all[k].name);
-    return names;
-  });
 }
 
 // ---------- PDF 与数据目录 ----------
@@ -154,5 +128,5 @@ function year(it) { return (it.meta.parsedDate || it.data.date || '').slice(0, 4
 function authors(it) { return (it.meta.creatorSummary || '作者').replace(/[⁦-⁩]/g, ''); }
 
 module.exports = {
-  name, field, help, search, recent, item, folders, folderPapers, collections, folderPaths, home, paperKey, pdfs
+  name, field, help, search, recent, folders, folderPapers, home, paperKey, pdfs
 };
