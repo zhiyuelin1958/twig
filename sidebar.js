@@ -9,7 +9,8 @@ const TWIG_ICON = 'type-hierarchy';                // 已有 Twig 的论文，�
 
 // 建立两个视图并注册它们的命令；返回 { refresh }，换文献库或点刷新时重新加载
 // deps：library() 当前文献库；twigKeys(lib) 文献编号 → Twig 文件；onIndexChange Twig 索引变动的事件；
-//       newTwig(picked) 新建（参数同 extension.js 的 createTwig）；openTwig(file) 打开 Twig 和预览
+//       newTwig(picked) 新建（参数同 extension.js 的 createTwig）；openTwig(file) 打开 Twig 和预览；
+//       右键菜单用的 preview(file)、exportHtml(file)、openPdf(paper, twig)、newIdea(paper, twig)，twig 为该论文的 Twig 文件或空
 function create(context, deps) {
   const categories = new Categories(deps);
   const papers = new Papers(deps);
@@ -28,7 +29,12 @@ function create(context, deps) {
     }),
     deps.onIndexChange(() => papers.redraw()),     // 新建或删掉 Twig 后标记跟着变
     vscode.commands.registerCommand('twig.newFromPaper', node => node && deps.newTwig({ item: node.paper })),
-    vscode.commands.registerCommand('twig.openPaperTwig', node => node && node.twig && deps.openTwig(node.twig))
+    vscode.commands.registerCommand('twig.openPaperTwig', node => node && node.twig && deps.openTwig(node.twig)),
+    // 论文的右键菜单；预览、导出只对已有 Twig 的显示（见 package.json 的 view/item/context）
+    vscode.commands.registerCommand('twig.paper.openPdf', node => node && deps.openPdf(node.paper, node.twig)),
+    vscode.commands.registerCommand('twig.paper.preview', node => node && node.twig && deps.preview(node.twig)),
+    vscode.commands.registerCommand('twig.paper.exportHtml', node => node && node.twig && deps.exportHtml(node.twig)),
+    vscode.commands.registerCommand('twig.paper.newIdea', node => node && deps.newIdea(node.paper, node.twig))
   );
   return { refresh() { categories.refresh(); papers.reload(); } };
 }

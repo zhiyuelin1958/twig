@@ -3,7 +3,7 @@
   "displayName": "Twig 问枝 — Paper Reading Tree",
   "description": "读论文时把主线与追问画成树状图，点节点看知识卡片，点出处跳到原文对应页；由论文想到的点子与 AI 讨论查证，整理成灵感笔记。配套的 AI 书写规则让 Claude Code、Codex、Gemini、Copilot 边讲边记、处处标出处，读完出题检验。",
   "publisher": "linyuze",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "license": "MIT",
   "engines": {
     "vscode": "^1.90.0"
@@ -77,6 +77,31 @@
         "category": "Twig"
       },
       {
+        "command": "twig.paper.openPdf",
+        "title": "打开 PDF",
+        "category": "Twig"
+      },
+      {
+        "command": "twig.paper.preview",
+        "title": "打开预览",
+        "category": "Twig"
+      },
+      {
+        "command": "twig.paper.exportHtml",
+        "title": "导出 HTML",
+        "category": "Twig"
+      },
+      {
+        "command": "twig.paper.newIdea",
+        "title": "从这篇新建灵感笔记",
+        "category": "Twig"
+      },
+      {
+        "command": "twig.openSettings",
+        "title": "打开设置",
+        "category": "Twig"
+      },
+      {
         "command": "twig.newIdea",
         "title": "新建灵感笔记",
         "category": "Twig"
@@ -114,7 +139,24 @@
         "contents": "在上面的“分类”里选中一个分类，这里列出其中的论文。"
       }
     ],
+    "submenus": [
+      {
+        "id": "twig.new",
+        "label": "新建 Twig",
+        "icon": "$(add)"
+      }
+    ],
     "menus": {
+      "twig.new": [
+        {
+          "command": "twig.newFromPdf",
+          "group": "1_new@1"
+        },
+        {
+          "command": "twig.newBlank",
+          "group": "1_new@2"
+        }
+      ],
       "view/title": [
         {
           "command": "twig.search",
@@ -122,14 +164,24 @@
           "group": "navigation@1"
         },
         {
-          "command": "twig.chooseLibrary",
+          "submenu": "twig.new",
           "when": "view == twig.categories",
           "group": "navigation@2"
         },
         {
-          "command": "twig.refresh",
+          "command": "twig.chooseLibrary",
           "when": "view == twig.categories",
           "group": "navigation@3"
+        },
+        {
+          "command": "twig.refresh",
+          "when": "view == twig.categories",
+          "group": "navigation@4"
+        },
+        {
+          "command": "twig.openSettings",
+          "when": "view == twig.categories",
+          "group": "9_settings"
         }
       ],
       "view/item/context": [
@@ -137,6 +189,31 @@
           "command": "twig.newFromPaper",
           "when": "view == twig.papers && viewItem == paper",
           "group": "inline"
+        },
+        {
+          "command": "twig.paper.openPdf",
+          "when": "view == twig.papers && viewItem =~ /^paper/",
+          "group": "1_open@1"
+        },
+        {
+          "command": "twig.paper.preview",
+          "when": "view == twig.papers && viewItem == paper.twig",
+          "group": "1_open@2"
+        },
+        {
+          "command": "twig.newFromPaper",
+          "when": "view == twig.papers && viewItem == paper",
+          "group": "2_new@1"
+        },
+        {
+          "command": "twig.paper.newIdea",
+          "when": "view == twig.papers && viewItem =~ /^paper/",
+          "group": "2_new@2"
+        },
+        {
+          "command": "twig.paper.exportHtml",
+          "when": "view == twig.papers && viewItem == paper.twig",
+          "group": "3_export@1"
         }
       ],
       "commandPalette": [
@@ -146,6 +223,22 @@
         },
         {
           "command": "twig.openPaperTwig",
+          "when": "false"
+        },
+        {
+          "command": "twig.paper.openPdf",
+          "when": "false"
+        },
+        {
+          "command": "twig.paper.preview",
+          "when": "false"
+        },
+        {
+          "command": "twig.paper.exportHtml",
+          "when": "false"
+        },
+        {
+          "command": "twig.paper.newIdea",
           "when": "false"
         }
       ],

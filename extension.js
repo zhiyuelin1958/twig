@@ -25,7 +25,11 @@ function activate(context) {
     twigKeys,
     onIndexChange: index.changed.event,
     newTwig: picked => createTwig(currentLibrary(), picked),
-    openTwig: file => openTwig(file)
+    openTwig: file => openTwig(file),
+    preview: file => preview(vscode.Uri.file(file)),
+    exportHtml: file => exportHtml(vscode.Uri.file(file)),
+    openPdf: openPaperPdf,
+    newIdea: newIdeaFrom
   });
   // 刷新，以及换了文献库或 Twig 文件夹时：侧栏重新向文献库取，Twig 索引重新扫描
   const refresh = () => { side.refresh(); return buildIndex(); };
@@ -40,6 +44,8 @@ function activate(context) {
     vscode.commands.registerCommand('twig.newBlank', () => createTwig(currentLibrary(), { item: null })),
     vscode.commands.registerCommand('twig.chooseLibrary', chooseLibrary),
     vscode.commands.registerCommand('twig.refresh', refresh),
+    // 只列 Twig 自己的设置
+    vscode.commands.registerCommand('twig.openSettings', () => vscode.commands.executeCommand('workbench.action.openSettings', '@ext:' + context.extension.id)),
     vscode.commands.registerCommand('twig.newIdea', newIdea),
     vscode.workspace.onDidChangeConfiguration(e => {
       if (['library', 'folder', ...library.PATH_SETTINGS].some(k => e.affectsConfiguration('twig.' + k))) refresh();
@@ -194,6 +200,39 @@ async function findPdf(meta, twigFile) {
   if (!list.length) { vscode.window.showWarningMessage(missing + '，' + lib.name + ' 里这篇文献也没有本机能打开的 PDF'); return ''; }
   const same = file && list.find(p => path.basename(p.file).toLowerCase() === path.basename(file).toLowerCase());
   return same ? same.file : (await choosePdfOf(list)) || '';
+}
+
+// 侧栏论文右键菜单的“打开 PDF”：用 PDF Viewer 打开第 1 页，没装时用系统默认程序
+async function openPaperPdf(paper, twig) {
+  const file = await paperPdf(paper, twig);
+  if (!file) return;
+  if (hasPdfViewer()) showPdf(file, 1);
+  else vscode.env.openExternal(vscode.Uri.file(file));
+}
+
+// 一篇论文的本机 PDF：已有 Twig 的取它元信息 pdf 指向的那个；否则向文献库取，多个时让用户选（quiet 时取第一个）
+// 取不到时返回空，quiet 时不提示
+async function paperPdf(paper, twig, quiet) {
+  const entry = twig && index.files.get(twig);
+  if (entry && entry.pdf && fs.existsSync(entry.pdf)) return entry.pdf;
+  const lib = currentLibrary();
+  let list;
+  try { list = (await lib.pdfs(paper.key)).filter(p => fs.existsSync(p.file)); }
+  catch (e) { if (!quiet) libraryError(lib, e); return ''; }
+  if (!list.length) {
+    if (!quiet) vscode.window.showWarningMessage(library.label(paper) + ' 在 ' + lib.name + ' 里没有本机能打开的 PDF');
+    return '';
+  }
+  return quiet ? list[0].file : (await choosePdfOf(list)) || '';
+}
+
+// 侧栏论文右键菜单的“从这篇新建灵感笔记”：起因指向它的 Twig，没有 Twig 时指向它的 PDF
+async function newIdeaFrom(paper, twig) {
+  if (twig) {
+    const entry = index.files.get(twig);
+    return newIdea({ name: (entry && entry.meta.title) || path.basename(twig, '.md'), file: twig });
+  }
+  return newIdea({ name: library.label(paper), file: await paperPdf(paper, null, true) });
 }
 
 async function exportHtml(uri) {
@@ -515,8 +554,9 @@ function fixLinks(dirs, moved) {
 }
 
 // 新建灵感笔记：在灵感笔记根目录下选一个主题文件夹（或新建），填简题，从 idea-template.md 生成 <编号>_<简题>_idea.md
-// 当前编辑器开着追问图时，在“起因”里放一个指回它的链接，AI 再补具体节点
-async function newIdea() {
+// “起因”里放一个指回来源的链接，AI 再补具体节点。来源：从侧栏的论文新建时为 source { name, file }（那篇的 Twig，没有时为 PDF；
+// 没有 file 时只写名字）；从命令面板新建时，当前编辑器开着追问图就用它
+async function newIdea(source) {
   const root = ideaRoot();
   if (!root) { vscode.window.showWarningMessage('先打开一个工作区，或在设置里填 twig.ideaFolder'); return; }
   const topics = fs.existsSync(root)
@@ -541,12 +581,16 @@ async function newIdea() {
   if (fs.existsSync(file)) { vscode.window.showWarningMessage('已有同名文件：' + file); return; }
 
   let text = fs.readFileSync(path.join(SKILL_SOURCE, 'idea-template.md'), 'utf8').replace(/^# .*$/m, '# ' + title.trim());
-  const editor = vscode.window.activeTextEditor;
-  const from = editor && editor.document.uri.fsPath;
-  if (from && tree.isTwig(from)) {
-    const rel = path.relative(dir, from).split(path.sep).join('/');
-    const name = tree.parse(editor.document.getText(), from).title || path.basename(from, '.md');
-    text = text.replace(/^(起因：).*$/m, (_, key) => key + '读 [' + name + '](' + (/[\s()<>]/.test(rel) ? '<' + rel + '>' : rel) + ') 时想到。');
+  let from = source && source.name ? source : null;   // 从菜单调用时可能传进别的参数
+  if (!from) {
+    const editor = vscode.window.activeTextEditor;
+    const file = editor && editor.document.uri.fsPath;
+    if (file && tree.isTwig(file)) from = { name: tree.parse(editor.document.getText(), file).title || path.basename(file, '.md'), file };
+  }
+  if (from) {
+    const rel = from.file && path.relative(dir, from.file).split(path.sep).join('/');
+    const link = rel ? '[' + from.name + '](' + (/[\s()<>]/.test(rel) ? '<' + rel + '>' : rel) + ')' : from.name;
+    text = text.replace(/^(起因：).*$/m, (_, key) => key + '读 ' + link + ' 时想到。');
   }
   fs.writeFileSync(file, text);
   await vscode.window.showTextDocument(vscode.Uri.file(file));
