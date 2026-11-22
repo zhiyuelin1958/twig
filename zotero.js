@@ -81,18 +81,25 @@ async function recent(limit) {
 
 // ---------- 分类 ----------
 
+// 全部分类，去掉回收站里的（Zotero 7 起删掉的分类先进回收站，本地接口照样返回，带 deleted 标记）
+async function collections() {
+  return (await get('/collections?format=json')).filter(c => !c.data.deleted);
+}
+
 // 分类：不给 parent 时为顶层，否则为它的子分类；按名称排序
+// 子分类数自己数：Zotero 给的 numCollections 含回收站里的
 async function folders(parent) {
-  const list = await get((parent ? '/collections/' + parent + '/collections' : '/collections/top') + '?format=json');
-  return list
-    .map(c => ({ key: c.key, name: c.data.name, folders: c.meta.numCollections || 0 }))
+  const all = await collections();
+  const under = key => all.filter(c => c.data.parentCollection === (key || false));
+  return under(parent)
+    .map(c => ({ key: c.key, name: c.data.name, folders: under(c.key).length }))
     .sort((a, b) => a.name.localeCompare(b.name, 'zh'));
 }
 
 // 分类里的论文，包括各级子分类中的，和 Zotero 打开“显示子分类中的条目”时一样；按标题排序
 // 先取全部分类找出各级子分类，再逐个取其中的条目，合并去重
 async function folderPapers(key) {
-  const all = await get('/collections?format=json');
+  const all = await collections();
   const keys = [key];
   for (let i = 0; i < keys.length; i++) keys.push(...all.filter(c => c.data.parentCollection === keys[i]).map(c => c.key));
   const lists = await Promise.all(keys.map(k => get('/collections/' + k + '/items/top?format=json')));
@@ -102,8 +109,10 @@ async function folderPapers(key) {
 // ---------- 特殊入口 ----------
 
 // 左栏分类以下的入口：各个已保存的搜索、未分类条目；重复条目、我的出版物、回收站用不到，不列
+// 已保存的搜索和分类一样，删掉后先进回收站，带 deleted 标记，要去掉
 async function views() {
   const searches = (await get('/searches?format=json'))
+    .filter(s => !s.data.deleted)
     .map(s => ({ key: 'search:' + s.key, name: s.data.name, icon: 'search' }))
     .sort((a, b) => a.name.localeCompare(b.name, 'zh'));
   return [...searches, { key: 'unfiled', name: '未分类条目', icon: 'inbox' }];
