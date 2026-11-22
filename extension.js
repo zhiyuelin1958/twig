@@ -32,7 +32,8 @@ function activate(context) {
     newIdea: newIdeaFrom
   });
   // 刷新，以及换了文献库或 Twig 文件夹时：侧栏重新向文献库取，Twig 索引重新扫描
-  const refresh = () => { side.refresh(); return buildIndex(); };
+  const refresh = () => { watchLibrary(side.refresh); side.refresh(); return buildIndex(); };
+  watchLibrary(side.refresh);
 
   let timer;
   context.subscriptions.push(
@@ -51,7 +52,7 @@ function activate(context) {
       if (['library', 'folder', ...library.PATH_SETTINGS].some(k => e.affectsConfiguration('twig.' + k))) refresh();
     }),
     vscode.workspace.onDidChangeWorkspaceFolders(refresh),
-    { dispose: () => index.watcher && index.watcher.dispose() },
+    { dispose: () => { if (index.watcher) index.watcher.dispose(); if (libraryWatch && libraryWatch.watcher) libraryWatch.watcher.dispose(); } },
     // 手动安装同时打开设置，之后扩展升级时规则跟着更新
     vscode.commands.registerCommand('twig.installSkill', async () => {
       await vscode.workspace.getConfiguration('twig').update('installSkill', true, vscode.ConfigurationTarget.Global);
@@ -248,13 +249,14 @@ async function exportHtml(uri) {
 }
 
 // 当前文献库，按设置 twig.library 取；各文献库用到的路径设置（见 library.js 的 PATH_SETTINGS，如 twig.bibFile）
-// 写相对路径的按当前工作区解析，没开工作区时当作没填
+// 写相对路径的按当前工作区解析，没开工作区时当作没填；没设置过 twig.library 的，连不上时提示先选文献库（见 library.js 的 open）
 // 设置不变时返回同一个对象，Twig 索引按它缓存文献编号表，侧栏按它判断是否换了文献库
 let libraryCache = null;
 function currentLibrary() {
   const config = vscode.workspace.getConfiguration('twig');
   const ws = currentWorkspace();
-  const options = {};
+  const inspect = config.inspect('library');
+  const options = { chosen: [inspect.globalValue, inspect.workspaceValue, inspect.workspaceFolderValue].some(v => v !== undefined) };
   for (const name of library.PATH_SETTINGS) {
     const value = config.get(name);
     options[name] = !value || path.isAbsolute(value) ? value : ws ? path.join(ws.uri.fsPath, value) : '';
@@ -262,6 +264,24 @@ function currentLibrary() {
   const sign = config.get('library') + '|' + JSON.stringify(options);
   if (!libraryCache || libraryCache.sign !== sign) libraryCache = { sign, lib: library.open(config.get('library'), options) };
   return libraryCache.lib;
+}
+
+// 文献库是本地的 .bib 或 PDF 文件夹时盯住它（见各文献库的 watch），改动后停顿 0.5 秒调用 onChange 刷新侧栏；
+// 换了文献库时换着盯，Zotero 不盯
+let libraryWatch = null;                           // { lib, watcher }
+function watchLibrary(onChange) {
+  const lib = currentLibrary();
+  if (libraryWatch && libraryWatch.lib === lib) return;
+  if (libraryWatch && libraryWatch.watcher) libraryWatch.watcher.dispose();
+  libraryWatch = { lib, watcher: null };
+  if (!lib.watch) return;
+  const watcher = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(vscode.Uri.file(lib.watch.base), lib.watch.pattern));
+  let timer;
+  const changed = () => { clearTimeout(timer); timer = setTimeout(onChange, 500); };
+  watcher.onDidCreate(changed);
+  watcher.onDidChange(changed);
+  watcher.onDidDelete(changed);
+  libraryWatch.watcher = watcher;
 }
 
 // 选择文献库（侧栏标题栏和连不上时的按钮）：按 library.js 的 KINDS 列出；要用文件或文件夹的，接着弹出选择框，

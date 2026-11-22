@@ -139,24 +139,7 @@
         "contents": "在上面的“分类”里选中一个分类，这里列出其中的论文。"
       }
     ],
-    "submenus": [
-      {
-        "id": "twig.new",
-        "label": "新建 Twig",
-        "icon": "$(add)"
-      }
-    ],
     "menus": {
-      "twig.new": [
-        {
-          "command": "twig.newFromPdf",
-          "group": "1_new@1"
-        },
-        {
-          "command": "twig.newBlank",
-          "group": "1_new@2"
-        }
-      ],
       "view/title": [
         {
           "command": "twig.search",
@@ -164,19 +147,14 @@
           "group": "navigation@1"
         },
         {
-          "submenu": "twig.new",
+          "command": "twig.chooseLibrary",
           "when": "view == twig.categories",
           "group": "navigation@2"
         },
         {
-          "command": "twig.chooseLibrary",
-          "when": "view == twig.categories",
-          "group": "navigation@3"
-        },
-        {
           "command": "twig.refresh",
           "when": "view == twig.categories",
-          "group": "navigation@4"
+          "group": "navigation@3"
         },
         {
           "command": "twig.openSettings",

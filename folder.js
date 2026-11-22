@@ -29,6 +29,7 @@ function open(root) {
 
   return {
     name: 'PDF 文件夹', field: null, help,
+    watch: root ? { base: root, pattern: '**' } : null,   // 增删、移动 PDF 和子文件夹后侧栏自动刷新
     async rootName() { scan(); return path.basename(root); },
     async allPapers() { return scan(); },
     async search(q) {

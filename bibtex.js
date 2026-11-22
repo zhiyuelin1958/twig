@@ -27,6 +27,7 @@ function open(bibFile) {
 
   return {
     name: 'BibTeX', field: 'citekey', help,
+    watch: bibFile ? { base: path.dirname(bibFile), pattern: path.basename(bibFile) } : null,
     // 顶层的名字取 .bib 的文件名；同时检查文件在不在
     async rootName() { await load(); return path.basename(bibFile); },
     async allPapers() { return library.byTitle([...(await load()).papers]); },

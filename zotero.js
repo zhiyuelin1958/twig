@@ -188,5 +188,6 @@ function year(it) { return (it.meta.parsedDate || it.data.date || '').slice(0, 4
 function authors(it) { return (it.meta.creatorSummary || '作者').replace(/[⁦-⁩]/g, ''); }
 
 module.exports = {
-  name, field, help, rootName, allPapers, search, recent, folders, folderPapers, views, viewPapers, home, paperKey, pdfs
+  name, field, help, rootName, allPapers, search, recent, folders, folderPapers, views, viewPapers, home, paperKey, pdfs,
+  watch: null                                      // 条目在 Zotero 的数据库里，不盯；Zotero 里改了点刷新
 };

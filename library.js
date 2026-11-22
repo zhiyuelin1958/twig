@@ -15,6 +15,7 @@
 //   home(pdf)            没开工作区时 Twig追问整理 放在哪个文件夹下 → 路径 | null
 //   paperKey(meta, file) Twig 文件对应的文献编号 → 编号 | null
 //   pdfs(key)            一篇文献的全部 PDF → [{ title, file }]，file 为本地绝对路径
+//   watch                文献库是本地文件或文件夹时为 { base, pattern }（同 vscode.RelativePattern），改动后侧栏自动刷新；否则为 null
 // 论文：{ key, authors, year, title, citation, firstPage }，authors 为作者简称（如 Morrison 等），citation 为完整引文（见 citation）
 //   没有引文的（PDF 文件夹）citation 为空，authors 处放文件名，新建时只填 pdf，引文等由 AI 读 PDF 后填
 const fs = require('fs');
@@ -37,13 +38,18 @@ const KINDS = {
 };
 const PATH_SETTINGS = Object.values(KINDS).filter(k => k.path).map(k => k.path.setting);
 
-// 按设置 twig.library 取文献库；options.bibFile 为 bibtex 用的 .bib 文件，options.pdfFolder 为 folder 用的 PDF 文件夹（都是绝对路径）
+// 按设置 twig.library 取文献库；options.bibFile 为 bibtex 用的 .bib 文件，options.pdfFolder 为 folder 用的 PDF 文件夹（都是绝对路径），
+// options.chosen 为用户是否设置过 twig.library
 // 各文献库模块要用本文件的 citation 等，所以在这里用到时才加载，避免互相引用
 function open(kind, options = {}) {
   if (kind === 'bibtex') return require('./bibtex.js').open(options.bibFile);
   if (kind === 'folder') return require('./folder.js').open(options.pdfFolder);
-  return require('./zotero.js');
+  const zotero = require('./zotero.js');
+  // 没选过文献库时用默认的 Zotero，连不上时不说“没有连上 Zotero”，不用 Zotero 的人看了不明白
+  return options.chosen ? zotero : Object.assign(Object.create(zotero), { help: { ...zotero.help, offline: UNCHOSEN } });
 }
+
+const UNCHOSEN = { label: '还没选文献库', detail: '用 Zotero 的，打开 Zotero 后点“重试”；不用的，点“选择文献库”，选 .bib 文件或放论文 PDF 的文件夹' };
 
 // 完整引文，如 Morrison, Thompson & Tatarskii (2009). 题目. *Monthly Weather Review*, 137, 991–1007.
 // names 为作者姓氏列表，超过 3 位或 etal（作者列表本身写了“等”）时写成“第一作者 et al.”
