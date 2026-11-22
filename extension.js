@@ -38,7 +38,7 @@ function activate(context) {
     vscode.commands.registerCommand('twig.search', newTree),
     vscode.commands.registerCommand('twig.newFromPdf', () => createTwig(currentLibrary(), { item: null, fromPdf: true })),
     vscode.commands.registerCommand('twig.newBlank', () => createTwig(currentLibrary(), { item: null })),
-    vscode.commands.registerCommand('twig.chooseLibrary', () => chooseLibrary(context)),
+    vscode.commands.registerCommand('twig.chooseLibrary', chooseLibrary),
     vscode.commands.registerCommand('twig.refresh', refresh),
     vscode.commands.registerCommand('twig.newIdea', newIdea),
     vscode.workspace.onDidChangeConfiguration(e => {
@@ -225,23 +225,37 @@ function currentLibrary() {
   return libraryCache.lib;
 }
 
-// 选择文献库：可选的值取自 package.json 里 twig.library 的选项，写进用户设置（工作区设置里写了的，改工作区的）
-// 选好后读不了（如还没填 .bib 路径），提示原因并打开 Twig 的设置
-async function chooseLibrary(context) {
-  const prop = context.extension.packageJSON.contributes.configuration.properties['twig.library'];
+// 选择文献库（侧栏标题栏和连不上时的按钮）：按 library.js 的 KINDS 列出；要用文件或文件夹的，接着弹出选择框，
+// 选好后写进设置，在工作区里的写相对路径（换电脑、走云盘都对得上）。用户不用进设置页面
+// 写进用户设置；工作区设置里写了的，改工作区的。设置改了由 activate 里的监听刷新侧栏
+async function chooseLibrary() {
   const config = vscode.workspace.getConfiguration('twig');
   const now = config.get('library');
-  const chosen = await vscode.window.showQuickPick(prop.enum.map((kind, i) => ({
-    label: kind, description: kind === now ? '当前' : '', detail: prop.enumDescriptions[i], kind
+  const chosen = await vscode.window.showQuickPick(Object.entries(library.KINDS).map(([kind, k]) => ({
+    label: k.label,
+    description: kind === now ? '当前' + (k.path && config.get(k.path.setting) ? '：' + config.get(k.path.setting) : '') : '',
+    detail: k.detail, kind
   })), { placeHolder: '从哪个文献库取论文' });
   if (!chosen) return;
-  const target = config.inspect('library').workspaceValue !== undefined ? vscode.ConfigurationTarget.Workspace : vscode.ConfigurationTarget.Global;
-  await config.update('library', chosen.kind, target);
-  const lib = currentLibrary();
-  try { await lib.rootName(); } catch (e) {
-    libraryError(lib, e);
-    vscode.commands.executeCommand('workbench.action.openSettings', 'twig.');
+  const kind = library.KINDS[chosen.kind];
+  const target = name => config.inspect(name).workspaceValue !== undefined ? vscode.ConfigurationTarget.Workspace : vscode.ConfigurationTarget.Global;
+  if (kind.path) {
+    const ws = currentWorkspace();
+    const files = await vscode.window.showOpenDialog({
+      title: kind.path.title, openLabel: '选这个',
+      canSelectFiles: kind.path.pick === 'file', canSelectFolders: kind.path.pick === 'folder', filters: kind.path.filters,
+      defaultUri: ws && ws.uri
+    });
+    if (!files) return;
+    let value = files[0].fsPath;
+    const rel = ws ? path.relative(ws.uri.fsPath, value) : '..';
+    if (!rel.startsWith('..') && !path.isAbsolute(rel)) value = rel.split(path.sep).join('/') || '.';
+    await config.update(kind.path.setting, value, target(kind.path.setting));
   }
+  await config.update('library', chosen.kind, target('library'));
+  const lib = currentLibrary();
+  try { vscode.window.showInformationMessage('文献库已换成 ' + kind.label + '：' + await lib.rootName()); }
+  catch (e) { libraryError(lib, e); }
 }
 
 // 当前工作区：当前文件所在的那个，否则第一个；没开工作区时为空

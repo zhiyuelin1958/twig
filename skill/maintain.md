@@ -44,7 +44,7 @@
 | `uninstall.js` | 卸载清理：删掉装进各家 AI 的规则文件，保留 `个人偏好.md`，跳过链接到仓库的目录 |
 
 - 新功能按职责放进对应文件，再放进文件中对应的一节；没有合适的节时新开一节并加注释标题。
-- 接入新的文献库：新建一个模块，导出 `library.js` 开头列的全部成员，在 `library.js` 的 `open` 里登记；要用路径设置的，设置名加进 `library.js` 的 `PATH_SETTINGS`，再在 `package.json` 的 `twig.library` 选项里加一值；`extension.js`、`sidebar.js` 不用改。
+- 接入新的文献库：新建一个模块，导出 `library.js` 开头列的全部成员，在 `library.js` 的 `open` 和 `KINDS` 里登记（`KINDS` 写列表里的名字、说明，要用文件或文件夹的写明设置名和选哪种），再在 `package.json` 的 `twig.library` 选项里加一值、给路径设置加一项；`extension.js`、`sidebar.js` 不用改。
 - 两处必须一致的内容（如 `viewer.html` 和 `build.cjs` 中的 `REF`，`extension.js` 和 `uninstall.js` 中的 `AI_HOMES`）在两处注释里互相注明。
 - 改了写法支持，同步改 `sources.md` 的“页面支持的写法”表。
 - 改了 `viewer.html` 或 `build.cjs`，用 `node skill/build.cjs <已有的 _twig.md 和 _idea.md>` 生成页面检查，不应出现提示。

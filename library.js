@@ -20,9 +20,22 @@
 const fs = require('fs');
 const path = require('path');
 
-// 各文献库用到的路径设置（设置名 twig. 后的部分）：extension.js 按当前工作区把相对路径解析成绝对路径，放进 open 的 options
-// 新的文献库要用路径设置时加在这里，extension.js 不用改
-const PATH_SETTINGS = ['bibFile', 'pdfFolder'];
+// 可选的文献库，键与 package.json 里 twig.library 的选项一致；侧栏“选择文献库”按这里列出并引导设置，用户不用进设置页面
+//   label、detail  列表里的名字和说明
+//   path           要用一个路径设置的：setting 为设置名（twig. 后的部分），pick 为 file（选文件，filters 为可选的类型）或 folder（选文件夹）
+// extension.js 按当前工作区把路径设置的相对路径解析成绝对路径，放进 open 的 options；新的文献库在这里登记，extension.js 不用改
+const KINDS = {
+  zotero: { label: 'Zotero', detail: '需要 Zotero 7 以上开着，并开放本地接口' },
+  bibtex: {
+    label: '.bib 文件', detail: 'JabRef 维护的，或从 Zotero、EndNote 等导出的；接着选 .bib 文件',
+    path: { setting: 'bibFile', pick: 'file', filters: { BibTeX: ['bib'] }, title: '选择 .bib 文件' }
+  },
+  folder: {
+    label: 'PDF 文件夹', detail: '不用文献软件：放论文 PDF 的文件夹，子文件夹即分类；接着选文件夹',
+    path: { setting: 'pdfFolder', pick: 'folder', title: '选择放论文 PDF 的文件夹' }
+  }
+};
+const PATH_SETTINGS = Object.values(KINDS).filter(k => k.path).map(k => k.path.setting);
 
 // 按设置 twig.library 取文献库；options.bibFile 为 bibtex 用的 .bib 文件，options.pdfFolder 为 folder 用的 PDF 文件夹（都是绝对路径）
 // 各文献库模块要用本文件的 citation 等，所以在这里用到时才加载，避免互相引用
@@ -126,4 +139,4 @@ function byTitle(list) {
   return list.sort((a, b) => key(a).localeCompare(key(b), 'zh'));
 }
 
-module.exports = { PATH_SETTINGS, open, citation, firstPage, label, fileName, setKey, fill, fillPdf, pdfPath, explain, samePath, pathKey, byTitle };
+module.exports = { KINDS, PATH_SETTINGS, open, citation, firstPage, label, fileName, setKey, fill, fillPdf, pdfPath, explain, samePath, pathKey, byTitle };

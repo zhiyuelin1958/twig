@@ -6,8 +6,8 @@ const library = require('./library.js');
 
 // 各种出错原因的说明，显示在侧栏和选论文的列表顶部
 const help = {
-  nofile: { label: '没有设置 .bib 文件', detail: '在设置里搜索 twig.bibFile，填上 .bib 文件的路径' },
-  missing: { label: '找不到 .bib 文件', detail: '检查设置 twig.bibFile 里的路径' }
+  nofile: { label: '还没选 .bib 文件', detail: '点侧栏的“选择文献库”，选 .bib 文件' },
+  missing: { label: '找不到 .bib 文件', detail: '文件可能移走或改名了，点侧栏的“选择文献库”重新选' }
 };
 
 const cache = new Map();                           // .bib 路径 → { mtime, lib }，文件改动后重新解析

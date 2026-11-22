@@ -56,7 +56,8 @@
       {
         "command": "twig.chooseLibrary",
         "title": "选择文献库",
-        "category": "Twig"
+        "category": "Twig",
+        "icon": "$(library)"
       },
       {
         "command": "twig.refresh",
@@ -121,9 +122,14 @@
           "group": "navigation@1"
         },
         {
-          "command": "twig.refresh",
+          "command": "twig.chooseLibrary",
           "when": "view == twig.categories",
           "group": "navigation@2"
+        },
+        {
+          "command": "twig.refresh",
+          "when": "view == twig.categories",
+          "group": "navigation@3"
         }
       ],
       "view/item/context": [
@@ -184,9 +190,9 @@
         "twig.library": {
           "type": "string",
           "enum": ["zotero", "bibtex", "folder"],
-          "enumDescriptions": ["Zotero（需要 Zotero 7 以上开着，并开放本地接口）", "一个 .bib 文件（JabRef 维护的，或 Zotero、EndNote 等导出的），在 twig.bibFile 填路径", "不用文献软件：放论文 PDF 的文件夹，子文件夹即分类，在 twig.pdfFolder 填路径"],
+          "enumDescriptions": ["Zotero（需要 Zotero 7 以上开着，并开放本地接口）", "一个 .bib 文件（JabRef 维护的，或 Zotero、EndNote 等导出的），路径在 twig.bibFile", "不用文献软件：放论文 PDF 的文件夹，子文件夹即分类，路径在 twig.pdfFolder"],
           "default": "zotero",
-          "description": "侧栏和新建 Twig 时用哪个文献库。"
+          "description": "侧栏和新建 Twig 时用哪个文献库。点侧栏的“选择文献库”会一并选好文件或文件夹，不用在这里填。"
         },
         "twig.bibFile": {
           "type": "string",

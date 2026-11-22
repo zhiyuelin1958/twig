@@ -6,8 +6,8 @@ const path = require('path');
 
 // 各种出错原因的说明，显示在侧栏和选论文的列表顶部
 const help = {
-  nofolder: { label: '没有设置 PDF 文件夹', detail: '在设置里搜索 twig.pdfFolder，填上放论文 PDF 的文件夹' },
-  missing: { label: '找不到 PDF 文件夹', detail: '在工作区里建一个“论文”文件夹放 PDF，或在设置 twig.pdfFolder 里改路径' }
+  nofolder: { label: '还没选 PDF 文件夹', detail: '点侧栏的“选择文献库”，选放论文 PDF 的文件夹' },
+  missing: { label: '找不到 PDF 文件夹', detail: '在工作区里建一个“论文”文件夹放 PDF，或点侧栏的“选择文献库”另选文件夹' }
 };
 
 // 打开一个 PDF 文件夹（绝对路径），返回 library.js 规定的文献库对象；每次调用时重新读文件夹，增删文件立即可见
