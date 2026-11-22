@@ -289,7 +289,9 @@ function watchLibrary(onChange) {
 
 // 选择文献库（侧栏标题栏和连不上时的按钮）：按 library.js 的 KINDS 列出；要用文件或文件夹的，接着弹出选择框，
 // 选好后写进设置，在工作区里的写相对路径（换电脑、走云盘都对得上）。用户不用进设置页面
-// 写进用户设置；工作区设置里写了的，改工作区的。设置改了由 activate 里的监听刷新侧栏
+// 写到哪：选的文件或文件夹在工作区里时，路径和文献库类型都写进工作区设置，只对这个项目生效（写进用户设置的话，
+// 相对路径到了别的工作区会指向那里的同名文件夹，别的项目的文献库类型也跟着变）；其余（Zotero、工作区外的）写进用户设置，
+// 各项目通用，但工作区设置里已写了的改工作区的，否则会被它盖住。设置改了由 activate 里的监听刷新侧栏
 async function chooseLibrary() {
   const config = vscode.workspace.getConfiguration('twig');
   const now = config.get('library');
@@ -300,7 +302,8 @@ async function chooseLibrary() {
   })), { placeHolder: '从哪个文献库取论文' });
   if (!chosen) return;
   const kind = library.KINDS[chosen.kind];
-  const target = name => config.inspect(name).workspaceValue !== undefined ? vscode.ConfigurationTarget.Workspace : vscode.ConfigurationTarget.Global;
+  let local = false;                               // 选的在工作区里，存的是相对路径
+  const target = name => local || config.inspect(name).workspaceValue !== undefined ? vscode.ConfigurationTarget.Workspace : vscode.ConfigurationTarget.Global;
   if (kind.path) {
     const ws = currentWorkspace();
     const files = await vscode.window.showOpenDialog({
@@ -311,7 +314,10 @@ async function chooseLibrary() {
     if (!files) return;
     let value = files[0].fsPath;
     const rel = ws ? path.relative(ws.uri.fsPath, value) : '..';
-    if (!rel.startsWith('..') && !path.isAbsolute(rel)) value = rel.split(path.sep).join('/') || '.';
+    if (!rel.startsWith('..') && !path.isAbsolute(rel)) {
+      value = rel.split(path.sep).join('/') || '.';
+      local = true;
+    }
     await config.update(kind.path.setting, value, target(kind.path.setting));
   }
   await config.update('library', chosen.kind, target('library'));
