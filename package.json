@@ -44,16 +44,6 @@
         "icon": "$(search)"
       },
       {
-        "command": "twig.newFromPdf",
-        "title": "从 PDF 新建 Twig",
-        "category": "Twig"
-      },
-      {
-        "command": "twig.newBlank",
-        "title": "用空白模板新建 Twig",
-        "category": "Twig"
-      },
-      {
         "command": "twig.chooseLibrary",
         "title": "选择文献库",
         "category": "Twig",

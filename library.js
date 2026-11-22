@@ -71,10 +71,9 @@ function firstPage(pages) {
 function label(p) { return p.authors + (p.year ? ' (' + p.year + ')' : ''); }
 
 // 生成不重名的 Twig 文件名，如 Morrison等2009_twig.md；同名时依次加 b、c…（Morrison等2015b_twig.md）
-// p 为空（从 PDF 新建或空白模板）时用默认名“作者年份”
 function fileName(p, folder) {
   // 去掉空格和文件名非法字符；PDF 文件夹的论文以文件名作“作者”，可能很长，截短
-  const base = p ? (p.authors.replace(/[\\/:*?"<>|\s]+/g, '') + p.year).slice(0, 40) : '作者年份';
+  const base = (p.authors.replace(/[\\/:*?"<>|\s]+/g, '') + p.year).slice(0, 40);
   let name = base + '_twig.md';
   if (!folder || !fs.existsSync(path.join(folder, name))) return name;            // 根目录还没有同名文件，直接用
   for (const suffix of 'bcdefghijklmnopqrstuvwxyz') {                              // 同名时从 b 起顺延字母后缀
@@ -97,7 +96,7 @@ function setKey(text, field, key) {
 }
 
 // 把论文信息填进模板：标题、一级标题、引文、pdf（相对 Twig 文件的路径）、文献编号、firstPage
-// 没有引文的（PDF 文件夹）同“从 PDF 新建”，只填 pdf
+// 没有引文的（PDF 文件夹）只填 pdf，引文等由 AI 读 PDF 后填
 // 替换值写成函数：标题里的 $$、$& 等在字符串替换值中是特殊记号，会被改掉
 function fill(template, lib, p, pdf, twigFile) {
   if (!p.citation) return fillPdf(template, pdf, twigFile);
@@ -108,7 +107,7 @@ function fill(template, lib, p, pdf, twigFile) {
     .replace(/^firstPage:.*$/m, () => 'firstPage: ' + p.firstPage);
 }
 
-// 只填 pdf：从 PDF 新建时用，firstPage 清空，标题、引文由 AI 读 PDF 后填
+// 只填 pdf，firstPage 清空
 function fillPdf(template, pdf, twigFile) {
   return template
     .replace(/^pdf: .*$/m, () => 'pdf: ' + pdfPath(pdf, twigFile))
@@ -145,4 +144,4 @@ function byTitle(list) {
   return list.sort((a, b) => key(a).localeCompare(key(b), 'zh'));
 }
 
-module.exports = { KINDS, PATH_SETTINGS, open, citation, firstPage, label, fileName, setKey, fill, fillPdf, pdfPath, explain, samePath, pathKey, byTitle };
+module.exports = { KINDS, PATH_SETTINGS, open, citation, firstPage, label, fileName, setKey, fill, pdfPath, explain, samePath, pathKey, byTitle };

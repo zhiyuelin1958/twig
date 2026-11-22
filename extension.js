@@ -24,7 +24,7 @@ function activate(context) {
     library: currentLibrary,
     twigKeys,
     onIndexChange: index.changed.event,
-    newTwig: picked => createTwig(currentLibrary(), picked),
+    newTwig: item => createTwig(currentLibrary(), item),
     openTwig: file => openTwig(file),
     preview: file => preview(vscode.Uri.file(file)),
     exportHtml: file => exportHtml(vscode.Uri.file(file)),
@@ -41,8 +41,6 @@ function activate(context) {
     vscode.commands.registerCommand('twig.exportHtml', uri => exportHtml(uri)),
     vscode.commands.registerCommand('twig.newTree', newTree),
     vscode.commands.registerCommand('twig.search', newTree),
-    vscode.commands.registerCommand('twig.newFromPdf', () => createTwig(currentLibrary(), { item: null, fromPdf: true })),
-    vscode.commands.registerCommand('twig.newBlank', () => createTwig(currentLibrary(), { item: null })),
     vscode.commands.registerCommand('twig.chooseLibrary', chooseLibrary),
     vscode.commands.registerCommand('twig.refresh', refresh),
     // 只列 Twig 自己的设置
@@ -326,40 +324,26 @@ function currentWorkspace() {
 // 新建：先在搜索框里从文献库选论文（见 pickPaper），再按 createTwig 新建；同一篇论文已有 Twig 时直接打开
 async function newTree() {
   const lib = currentLibrary();
-  const picked = await pickPaper(lib);             // undefined：取消
-  if (picked) await createTwig(lib, picked);
+  const item = await pickPaper(lib);               // undefined：取消
+  if (item) await createTwig(lib, item);
 }
 
-// 新建一个 Twig，平铺保存到根目录：picked 为 { item } 时从文献库的这篇论文新建，自动填好标题、引文、pdf、firstPage；
-// { item: null, fromPdf: true } 时从 PDF 新建（只填 pdf）；{ item: null } 时用空白模板。同一篇论文已有 Twig 时直接打开
-// 搜索框、侧栏的“新建”按钮、侧栏欢迎页的按钮都走这里
-async function createTwig(lib, picked) {
-  const item = picked.item;
-
+// 从文献库的一篇论文新建 Twig，平铺保存到根目录，自动填好标题、引文、pdf、firstPage；同一篇论文已有 Twig 时直接打开
+// 只从文献库新建：论文先在文献库里整理好再读。搜索框和侧栏论文行的“新建”按钮都走这里
+async function createTwig(lib, item) {
   // 第一步：确定根目录并做一对一查重，已存在时直接打开
   let pdf = '';
-  let folder;
-  if (item) {
-    let pdfList;
-    try { pdfList = await lib.pdfs(item.key); }    // 一次取出该文献的全部 PDF，供查重和后续选择共用
-    catch (e) { return libraryError(lib, e); }
-    folder = await twigFolder(lib, pdfList[0] && pdfList[0].file);
-    const existing = await findExistingTwig(folder, lib, item, pdfList.map(p => p.file));
-    if (existing) return openExistingTwig(existing, folder);
-    if (pdfList.length === 0) {
-      vscode.window.showWarningMessage('这篇文献在 ' + lib.name + ' 里没有 PDF，pdf 一项留空，可以之后自己填。');
-    } else {
-      pdf = await choosePdfOf(pdfList);            // 多个 PDF 时让用户选正文那一个
-      if (pdf === undefined) return;
-    }
-  } else if (picked.fromPdf) {
-    pdf = await choosePdf();                       // 弹出选文件框选一篇 PDF
-    if (pdf === undefined) return;
-    folder = await twigFolder(lib, pdf);
-    const existing = await findExistingTwig(folder, null, null, [pdf]);
-    if (existing) return openExistingTwig(existing, folder);
+  let pdfList;
+  try { pdfList = await lib.pdfs(item.key); }      // 一次取出该文献的全部 PDF，供查重和后续选择共用
+  catch (e) { return libraryError(lib, e); }
+  const folder = await twigFolder(lib, pdfList[0] && pdfList[0].file);
+  const existing = await findExistingTwig(folder, lib, item, pdfList.map(p => p.file));
+  if (existing) return openExistingTwig(existing, folder);
+  if (pdfList.length === 0) {
+    vscode.window.showWarningMessage('这篇文献在 ' + lib.name + ' 里没有 PDF，pdf 一项留空，可以之后自己填。');
   } else {
-    folder = await twigFolder(null, '');           // 空白模板：不查重，直接放根目录
+    pdf = await choosePdfOf(pdfList);              // 多个 PDF 时让用户选正文那一个
+    if (pdf === undefined) return;
   }
 
   // 第二步：准备根目录、生成不重名默认文件名、弹出保存对话框
@@ -376,9 +360,7 @@ async function createTwig(lib, picked) {
   }
 
   // 第三步：填充模板、写入文件并打开编辑器和预览
-  let text = fs.readFileSync(path.join(SKILL_SOURCE, '模板.md'), 'utf8');
-  if (item) text = library.fill(text, lib, item, pdf, target.fsPath);
-  else if (pdf) text = library.fillPdf(text, pdf, target.fsPath);
+  const text = library.fill(fs.readFileSync(path.join(SKILL_SOURCE, '模板.md'), 'utf8'), lib, item, pdf, target.fsPath);
   fs.writeFileSync(target.fsPath, text);
   if (!existed) await buildIndex();                // 根目录刚建好，重新扫描，文件监视才能盯住它
   else indexFile(target.fsPath);                   // 不等文件监视，侧栏标记立即刷新
@@ -399,17 +381,15 @@ async function openTwig(file) {
 }
 
 // 查找同一篇论文已有的 Twig 文件（查 Twig 索引，根目录含旧子文件夹），找到返回绝对路径，否则返回 null
-// 文献库模式先比对文献编号（zotero / citekey；没写编号的旧文件由文献库按 pdf 推出），再比对 pdf 路径；从 PDF 新建只比对 pdf 路径
+// 先比对文献编号（zotero / citekey；没写编号的旧文件由文献库按 pdf 推出），再比对 pdf 路径
 // 已写了另一篇文献编号的文件不参与 pdf 比对
 async function findExistingTwig(root, lib, item, pdfs) {
   if (!index.root || !library.samePath(index.root, root)) await buildIndex(root);   // 没开工作区时根目录随文献库变，按这次的重新扫描
-  if (item) {
-    const hit = (await twigKeys(lib)).get(item.key);
-    if (hit) return hit;
-  }
+  const hit = (await twigKeys(lib)).get(item.key);
+  if (hit) return hit;
   for (const p of pdfs) {
     const file = index.byPdf.get(library.pathKey(p));
-    if (file && !(item && index.files.get(file).meta[lib.field])) return file;
+    if (file && !(lib.field && index.files.get(file).meta[lib.field])) return file;
   }
   return null;
 }
@@ -621,24 +601,20 @@ async function newIdea(source) {
 // - 不输入时按分类逐层浏览：顶层列出分类、特殊入口（已保存的搜索等）和最近改动的 5 篇，点分类进入，“返回上一级”退出；
 //   分类里的论文包括各级子分类中的
 // - 输入标题、作者或年份时搜整个文献库；清空输入框回到原来所在的分类
-// 每篇论文一行：作者 (年份) 在前，标题在后，已有 Twig 的标出来；“从 PDF 新建”“空白模板”总在最下面
+// 每篇论文一行：作者 (年份) 在前，标题在后，已有 Twig 的标出来；选中返回该论文，取消返回 undefined
 function pickPaper(lib) {
   const separator = label => ({ label, kind: vscode.QuickPickItemKind.Separator });
   // 论文行；twigs 为 Twig 索引的文献编号表
   const paper = twigs => p => twigs.has(p.key)
     ? { label: '$(' + sidebar.TWIG_ICON + ') ' + library.label(p), description: '已有 Twig · ' + p.title, alwaysShow: true, item: p }
     : { label: library.label(p), description: p.title, alwaysShow: true, item: p };
-  const fromPdf = { label: '$(file-pdf) 从 PDF 新建', description: '只填 PDF 路径，引文等由 AI 读 PDF 后填', alwaysShow: true, item: null, fromPdf: true };
-  const blank = { label: '$(file) 空白模板', alwaysShow: true, item: null };
-  const tail = [separator('不用 ' + lib.name), fromPdf, blank];
   // 读不了文献库时显示在列表顶部的说明（文字见各文献库的 help），选中它不做任何事
   const notice = e => {
     const h = library.explain(lib, e) || { label: '读取 ' + lib.name + ' 出错', detail: e.message };
-    return { label: '$(info) ' + h.label, detail: h.detail + '；或选下面的“从 PDF 新建”', alwaysShow: true, notice: true };
+    return { label: '$(info) ' + h.label, detail: h.detail, alwaysShow: true, notice: true };
   };
   const box = vscode.window.createQuickPick();
   box.placeholder = '搜索 ' + lib.name + ' 文献（标题、作者、年份），或进入分类';
-  box.items = tail;
   const trail = [];                                // 当前所在的分类，从顶层往下；特殊入口也算一层，view 为真
   let timer, latest = 0;
 
@@ -648,12 +624,9 @@ function pickPaper(lib) {
     box.busy = true;
     try {
       const items = await load();
-      if (id === latest) box.items = [...items, ...tail];
+      if (id === latest) box.items = items;
     } catch (e) {
-      if (id === latest) {
-        box.items = [notice(e), ...tail];
-        box.activeItems = [fromPdf];               // 默认选中“从 PDF 新建”，回车直接选 PDF
-      }
+      if (id === latest) box.items = [notice(e)];
     }
     if (id === latest) box.busy = false;
   }
@@ -703,7 +676,7 @@ function pickPaper(lib) {
         browse();
         return;
       }
-      resolve({ item: chosen.item, fromPdf: chosen.fromPdf });
+      resolve(chosen.item);
       box.dispose();
     });
     box.onDidHide(() => { resolve(undefined); box.dispose(); });
@@ -717,12 +690,6 @@ async function choosePdfOf(list) {
     list.map(p => ({ label: path.basename(p.file), description: p.title, file: p.file })),
     { placeHolder: '这篇文献有多个 PDF，选正文那一个' });
   return chosen && chosen.file;
-}
-
-// 从 PDF 新建：弹出选文件框选一篇 PDF；取消时返回 undefined
-async function choosePdf() {
-  const files = await vscode.window.showOpenDialog({ filters: { PDF: ['pdf'] }, openLabel: '用这篇论文新建' });
-  return files && files[0].fsPath;
 }
 
 // 书写规则要写入用户家目录，所以第一次启动先询问；用户同意后，扩展升级或新装了某家 AI 时自动更新

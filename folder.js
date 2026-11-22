@@ -1,6 +1,6 @@
 // PDF 文件夹文献库：给不用文献软件的用户，把放论文 PDF 的文件夹当作文献库；接口见 library.js
 // 各级子文件夹即分类，其中的 PDF 即论文；文献编号为 PDF 相对该文件夹的路径（用 / 分隔），不写进 Twig 文件，查重按 pdf 路径比对
-// 论文只有文件名，引文、firstPage 等由 AI 读 PDF 后填，和“从 PDF 新建”一样；只读，不改文件夹里的文件
+// 论文只有文件名，新建时只填 pdf，引文、firstPage 等由 AI 读 PDF 后填；只读，不改文件夹里的文件
 const fs = require('fs');
 const path = require('path');
 

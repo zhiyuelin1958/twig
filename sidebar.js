@@ -9,7 +9,7 @@ const TWIG_ICON = 'type-hierarchy';                // 已有 Twig 的论文，�
 
 // 建立两个视图并注册它们的命令；返回 { refresh }，换文献库或点刷新时重新加载
 // deps：library() 当前文献库；twigKeys(lib) 文献编号 → Twig 文件；onIndexChange Twig 索引变动的事件；
-//       newTwig(picked) 新建（参数同 extension.js 的 createTwig）；openTwig(file) 打开 Twig 和预览；
+//       newTwig(paper) 从这篇论文新建（见 extension.js 的 createTwig）；openTwig(file) 打开 Twig 和预览；
 //       右键菜单用的 preview(file)、exportHtml(file)、openPdf(paper, twig)、newIdea(paper, twig)，twig 为该论文的 Twig 文件或空
 function create(context, deps) {
   const categories = new Categories(deps);
@@ -28,7 +28,7 @@ function create(context, deps) {
       if (node && node.kind !== 'action') papers.show(node);
     }),
     deps.onIndexChange(() => papers.redraw()),     // 新建或删掉 Twig 后标记跟着变
-    vscode.commands.registerCommand('twig.newFromPaper', node => node && deps.newTwig({ item: node.paper })),
+    vscode.commands.registerCommand('twig.newFromPaper', node => node && deps.newTwig(node.paper)),
     vscode.commands.registerCommand('twig.openPaperTwig', node => node && node.twig && deps.openTwig(node.twig)),
     // 论文的右键菜单；预览、导出只对已有 Twig 的显示（见 package.json 的 view/item/context）
     vscode.commands.registerCommand('twig.paper.openPdf', node => node && deps.openPdf(node.paper, node.twig)),
@@ -74,7 +74,7 @@ class Categories {
       if (node.kind === 'folder') return (await lib.folders(node.key)).map(f => folder(f, node));
       return [];
     } catch (e) {
-      // 连不上或还没设置：显示原因，下面放几个按钮，不用文献库也能新建
+      // 连不上或还没设置：显示原因，下面放“选择文献库”“重试”两个按钮
       const h = explain(lib, e);
       this.view.message = h.label + '：' + h.detail;
       return node ? [] : ACTIONS;
@@ -108,8 +108,6 @@ function folder(f, parent) {
 
 // 文献库连不上或还没设置时，分类视图里的按钮
 const ACTIONS = [
-  { kind: 'action', name: '从 PDF 新建', icon: 'file-pdf', description: '引文等由 AI 读 PDF 后填', command: 'twig.newFromPdf' },
-  { kind: 'action', name: '空白模板', icon: 'file', command: 'twig.newBlank' },
   { kind: 'action', name: '选择文献库', icon: 'library', command: 'twig.chooseLibrary' },
   { kind: 'action', name: '重试', icon: 'refresh', description: '打开文献库或改好设置后', command: 'twig.refresh' }
 ];
