@@ -35,8 +35,9 @@
 |---|---|
 | `skill/build.cjs` | 解析源文件（`parse`，按文件名分追问图 `_twig.md` 与灵感笔记 `_idea.md`；`figurePages`、`refLinks`）、检查格式与链接（`check`）、比对整理前后（`compare`）、改写移动后的相对路径（`relocate`）、生成页面（`toHtml`）；命令行和扩展共用 |
 | `skill/viewer.html` | 页面：样式和脚本，按注释标题分节（公式、跳转原文、行内格式、块级排版、画树、灵感笔记、知识卡片、缩放）；KaTeX 版本在 `<head>` |
-| `extension.js` | 只放与 VSCode 交互的部分：命令、预览面板、新建时的搜索框与一对一查重（`newTree`、`findExistingTwig`）、新建灵感笔记（`newIdea`）、打开 PDF（`openPdf`）、打开链接（`openLink`，指向 Twig 文件的在预览中定位）、旧文件夹改名（`renameOldFolder`）、安装 skill |
-| `library.js` | 文献库接口（各文献库模块导出哪些成员，写在文件开头）、按设置选文献库，以及与具体文献库无关的部分：引文格式、文件名、把引文、`pdf`、文献编号、`firstPage` 填进模板；不用 vscode 接口 |
+| `extension.js` | 只放与 VSCode 交互的部分：命令、预览面板、新建（`createTwig`，搜索框、侧栏按钮共用）与搜索框（`pickPaper`）、Twig 索引（根目录含旧子文件夹的“文献编号 → Twig”“PDF 路径 → Twig”两张表，随文件增删改更新）与一对一查重（`findExistingTwig`）、选择文献库（`chooseLibrary`）、新建灵感笔记（`newIdea`）、打开 PDF（`openPdf`）、打开链接（`openLink`，指向 Twig 文件的在预览中定位）、旧文件夹改名（`renameOldFolder`）、安装 skill |
+| `sidebar.js` | 侧栏的“分类”“论文”两个视图：分类树、特殊入口、选中入口里的论文和“已有 Twig”标记，文献库连不上时的说明和按钮；只调用 `library.js` 的接口，不按文献库分情况写；查重、新建、打开 Twig 由 `extension.js` 传入 |
+| `library.js` | 文献库接口（各文献库模块导出哪些成员，写在文件开头；侧栏和搜索框只用这些成员）、按设置选文献库，以及与具体文献库无关的部分：引文格式、文件名、把引文、`pdf`、文献编号、`firstPage` 填进模板、论文排序；不用 vscode 接口 |
 | `zotero.js` | Zotero 文献库：通过 Zotero 本地 API 列分类、搜索文献、取 PDF 路径，推出数据目录和 Twig 文件对应的文献编号；不用 vscode 接口 |
 | `bibtex.js` | BibTeX 文献库：解析 `.bib` 文件的条目、JabRef 分组和 `file` 字段（兼容 JabRef 与 Zotero、Mendeley 等的导出写法）；只读，不改 `.bib`；不用 vscode 接口 |
 | `uninstall.js` | 卸载清理：删掉装进各家 AI 的规则文件，保留 `个人偏好.md`，跳过链接到仓库的目录 |

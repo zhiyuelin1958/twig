@@ -1,13 +1,17 @@
 // 文献库：Twig 从哪个文献库取论文、分类和 PDF，以及与具体文献库无关的部分（文件名、填模板、pdf 路径写法）；不用 vscode 接口
 //
-// 接口：各文献库模块（zotero.js、bibtex.js）导出同一组成员
+// 接口：各文献库模块（zotero.js、bibtex.js）导出同一组成员；侧栏和搜索框只调用这些成员，不按文献库分情况写
 //   name                 显示名，如 Zotero
 //   field                Twig 元信息里存文献编号的字段，如 zotero
 //   help                 { 出错原因: { label, detail } }，出错时 error.reason 为其中一个原因
+//   rootName()           文献库顶层的名字，如“我的文库”；侧栏先调用它，出错即文献库连不上或没设置
+//   allPapers()          全部论文，按标题排序 → [论文]
 //   search(q)            按标题、作者、年份搜索 → [论文]
 //   recent(n)            最近改动的 n 篇 → [论文]
-//   folders(parent)      分类：不给 parent 为顶层，否则为其子分类 → [{ key, name, folders, papers }]，后两项为数量
-//   folderPapers(key)    直接放在某个分类里的论文 → [论文]
+//   folders(parent)      分类：不给 parent 为顶层，否则为其子分类，按名称排序 → [{ key, name, folders }]，folders 为子分类数
+//   folderPapers(key)    分类里的论文，包括各级子分类中的，去重后按标题排序 → [论文]
+//   views()              分类以外的特殊入口，如已保存的搜索、未分类条目；没有时为空列表 → [{ key, name, icon }]，icon 为 codicon 名
+//   viewPapers(key)      特殊入口里的论文，按标题排序 → [论文]
 //   home(pdf)            没开工作区时 Twig追问整理 放在哪个文件夹下 → 路径 | null
 //   paperKey(meta, file) Twig 文件对应的文献编号 → 编号 | null
 //   pdfs(key)            一篇文献的全部 PDF → [{ title, file }]，file 为本地绝对路径
@@ -38,8 +42,8 @@ function firstPage(pages) {
   return m ? +m[1] : 1;
 }
 
-// 作者简称与年份，如 Morrison 等 (2009)
-function label(p) { return p.authors + ' (' + p.year + ')'; }
+// 作者简称与年份，如 Morrison 等 (2009)；没有年份（如网页）时只写作者
+function label(p) { return p.authors + (p.year ? ' (' + p.year + ')' : ''); }
 
 // 生成不重名的 Twig 文件名，如 Morrison等2009_twig.md；同名时依次加 b、c…（Morrison等2015b_twig.md）
 // p 为空（从 PDF 新建或空白模板）时用默认名“作者年份”
@@ -101,4 +105,16 @@ function samePath(a, b) {
   return path.relative(a, b) === '';
 }
 
-module.exports = { open, citation, firstPage, label, fileName, setKey, fill, fillPdf, pdfPath, explain, samePath };
+// 路径的比对形式，作查找表的键：绝对路径，Windows 上转小写；与 samePath 的判断一致
+function pathKey(p) {
+  const abs = path.resolve(p);
+  return process.platform === 'win32' ? abs.toLowerCase() : abs;
+}
+
+// 论文列表按标题排序（中文按拼音）；和 Zotero 一样不计开头的引号等标点
+function byTitle(list) {
+  const key = p => (p.title || '').replace(/^[^\p{L}\p{N}]+/u, '');
+  return list.sort((a, b) => key(a).localeCompare(key(b), 'zh'));
+}
+
+module.exports = { open, citation, firstPage, label, fileName, setKey, fill, fillPdf, pdfPath, explain, samePath, pathKey, byTitle };

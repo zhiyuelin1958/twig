@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const library = require('./library.js');
 
-// 各种出错原因的说明，显示在选论文的列表顶部
+// 各种出错原因的说明，显示在侧栏和选论文的列表顶部
 const help = {
   nofile: { label: '没有设置 .bib 文件', detail: '在设置里搜索 twig.bibFile，填上 .bib 文件的路径' },
   missing: { label: '找不到 .bib 文件', detail: '检查设置 twig.bibFile 里的路径' }
@@ -27,20 +27,34 @@ function open(bibFile) {
 
   return {
     name: 'BibTeX', field: 'citekey', help,
+    // 顶层的名字取 .bib 的文件名；同时检查文件在不在
+    async rootName() { await load(); return path.basename(bibFile); },
+    async allPapers() { return library.byTitle([...(await load()).papers]); },
     async search(q) {
       const words = q.toLowerCase().split(/\s+/).filter(Boolean);
       return (await load()).papers.filter(p => words.every(w => p.text.includes(w))).slice(0, 20);
     },
     async recent(n) { return (await load()).byRecent.slice(0, n); },
+    // 分类即 JabRef 的分组
     async folders(parent) {
       const lib = await load();
       return lib.groups.filter(g => g.parent === (parent ?? null))
-        .map(g => ({ key: g.id, name: g.name, folders: lib.groups.filter(c => c.parent === g.id).length,
-          papers: lib.papers.filter(p => p.groups.includes(g.id)).length }))
+        .map(g => ({ key: g.id, name: g.name, folders: lib.groups.filter(c => c.parent === g.id).length }))
         .sort((a, b) => a.name.localeCompare(b.name, 'zh'));
     },
+    // 分组里的论文，包括各级子分组中的，去重
     async folderPapers(key) {
-      return (await load()).papers.filter(p => p.groups.includes(key)).sort((a, b) => a.title.localeCompare(b.title));
+      const lib = await load();
+      const ids = [key];
+      for (let i = 0; i < ids.length; i++) ids.push(...lib.groups.filter(g => g.parent === ids[i]).map(g => g.id));
+      return library.byTitle(lib.papers.filter(p => p.groups.some(g => ids.includes(g))));
+    },
+    // 有分组时给出“未分组条目”；没有分组时全部条目已在顶层，不另列
+    async views() {
+      return (await load()).groups.length ? [{ key: 'ungrouped', name: '未分组条目', icon: 'inbox' }] : [];
+    },
+    async viewPapers(key) {
+      return key === 'ungrouped' ? library.byTitle((await load()).papers.filter(p => !p.groups.length)) : [];
     },
     async home() { return bibFile ? path.dirname(bibFile) : null; },
     // 元信息 citekey；没写时按 pdf 指向的文件找 file 字段里有它的条目

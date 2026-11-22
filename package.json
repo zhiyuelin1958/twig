@@ -3,7 +3,7 @@
   "displayName": "Twig 问枝 — Paper Reading Tree",
   "description": "读论文时把主线与追问画成树状图，点节点看知识卡片，点出处跳到原文对应页；由论文想到的点子与 AI 讨论查证，整理成灵感笔记。配套的 AI 书写规则让 Claude Code、Codex、Gemini、Copilot 边讲边记、处处标出处，读完出题检验。",
   "publisher": "linyuze",
-  "version": "0.6.0",
+  "version": "1.0.0",
   "license": "MIT",
   "engines": {
     "vscode": "^1.90.0"
@@ -38,6 +38,44 @@
         "category": "Twig"
       },
       {
+        "command": "twig.search",
+        "title": "搜索文献",
+        "category": "Twig",
+        "icon": "$(search)"
+      },
+      {
+        "command": "twig.newFromPdf",
+        "title": "从 PDF 新建 Twig",
+        "category": "Twig"
+      },
+      {
+        "command": "twig.newBlank",
+        "title": "用空白模板新建 Twig",
+        "category": "Twig"
+      },
+      {
+        "command": "twig.chooseLibrary",
+        "title": "选择文献库",
+        "category": "Twig"
+      },
+      {
+        "command": "twig.refresh",
+        "title": "刷新",
+        "category": "Twig",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "twig.newFromPaper",
+        "title": "新建 Twig",
+        "category": "Twig",
+        "icon": "$(add)"
+      },
+      {
+        "command": "twig.openPaperTwig",
+        "title": "打开 Twig",
+        "category": "Twig"
+      },
+      {
         "command": "twig.newIdea",
         "title": "新建灵感笔记",
         "category": "Twig"
@@ -48,7 +86,63 @@
         "category": "Twig"
       }
     ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "twig",
+          "title": "Twig",
+          "icon": "media/sidebar.svg"
+        }
+      ]
+    },
+    "views": {
+      "twig": [
+        {
+          "id": "twig.categories",
+          "name": "分类"
+        },
+        {
+          "id": "twig.papers",
+          "name": "论文"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "twig.papers",
+        "contents": "在上面的“分类”里选中一个分类，这里列出其中的论文。"
+      }
+    ],
     "menus": {
+      "view/title": [
+        {
+          "command": "twig.search",
+          "when": "view == twig.categories",
+          "group": "navigation@1"
+        },
+        {
+          "command": "twig.refresh",
+          "when": "view == twig.categories",
+          "group": "navigation@2"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "twig.newFromPaper",
+          "when": "view == twig.papers && viewItem == paper",
+          "group": "inline"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "twig.newFromPaper",
+          "when": "false"
+        },
+        {
+          "command": "twig.openPaperTwig",
+          "when": "false"
+        }
+      ],
       "editor/title": [
         {
           "command": "twig.preview",
@@ -92,7 +186,7 @@
           "enum": ["zotero", "bibtex"],
           "enumDescriptions": ["Zotero（需要 Zotero 7 以上开着，并开放本地接口）", "一个 .bib 文件（JabRef 维护的，或 Zotero、EndNote 等导出的），在 twig.bibFile 填路径"],
           "default": "zotero",
-          "description": "新建 Twig 时用哪个文献库。"
+          "description": "侧栏和新建 Twig 时用哪个文献库。"
         },
         "twig.bibFile": {
           "type": "string",
