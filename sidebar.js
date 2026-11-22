@@ -170,15 +170,16 @@ class Papers {
   getTreeItem({ paper, twig }) {
     const item = new vscode.TreeItem(library.label(paper));
     item.description = paper.title;
+    const about = paper.citation || paper.key;     // 没有引文的（PDF 文件夹）显示文献编号，即 PDF 的路径
     if (twig) {
       item.iconPath = new vscode.ThemeIcon(TWIG_ICON, new vscode.ThemeColor('charts.green'));
       item.contextValue = 'paper.twig';
       item.command = { command: 'twig.openPaperTwig', title: '打开 Twig', arguments: [{ paper, twig }] };
-      item.tooltip = paper.citation + '\n\n已有 Twig：' + twig;
+      item.tooltip = about + '\n\n已有 Twig：' + twig;
     } else {
       item.iconPath = new vscode.ThemeIcon('blank');   // 占位，与有标记的对齐
       item.contextValue = 'paper';
-      item.tooltip = paper.citation + '\n\n还没有 Twig，点右边的 + 新建';
+      item.tooltip = about + '\n\n还没有 Twig，点右边的 + 新建';
     }
     return item;
   }

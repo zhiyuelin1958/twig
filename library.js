@@ -1,11 +1,11 @@
 // 文献库：Twig 从哪个文献库取论文、分类和 PDF，以及与具体文献库无关的部分（文件名、填模板、pdf 路径写法）；不用 vscode 接口
 //
-// 接口：各文献库模块（zotero.js、bibtex.js）导出同一组成员；侧栏和搜索框只调用这些成员，不按文献库分情况写
+// 接口：各文献库模块（zotero.js、bibtex.js、folder.js）导出同一组成员；侧栏和搜索框只调用这些成员，不按文献库分情况写
 //   name                 显示名，如 Zotero
-//   field                Twig 元信息里存文献编号的字段，如 zotero
+//   field                Twig 元信息里存文献编号的字段，如 zotero；为 null 时不存，文献编号由 pdf 推出（见 paperKey）
 //   help                 { 出错原因: { label, detail } }，出错时 error.reason 为其中一个原因
 //   rootName()           文献库顶层的名字，如“我的文库”；侧栏先调用它，出错即文献库连不上或没设置
-//   allPapers()          全部论文，按标题排序 → [论文]
+//   allPapers()          全部论文，按标题（PDF 文件夹按路径）排序 → [论文]，下同
 //   search(q)            按标题、作者、年份搜索 → [论文]
 //   recent(n)            最近改动的 n 篇 → [论文]
 //   folders(parent)      分类：不给 parent 为顶层，否则为其子分类，按名称排序 → [{ key, name, folders }]，folders 为子分类数
@@ -16,13 +16,19 @@
 //   paperKey(meta, file) Twig 文件对应的文献编号 → 编号 | null
 //   pdfs(key)            一篇文献的全部 PDF → [{ title, file }]，file 为本地绝对路径
 // 论文：{ key, authors, year, title, citation, firstPage }，authors 为作者简称（如 Morrison 等），citation 为完整引文（见 citation）
+//   没有引文的（PDF 文件夹）citation 为空，authors 处放文件名，新建时只填 pdf，引文等由 AI 读 PDF 后填
 const fs = require('fs');
 const path = require('path');
 
-// 按设置 twig.library 取文献库；options.bibFile 为 bibtex 用的 .bib 文件（绝对路径）
+// 各文献库用到的路径设置（设置名 twig. 后的部分）：extension.js 按当前工作区把相对路径解析成绝对路径，放进 open 的 options
+// 新的文献库要用路径设置时加在这里，extension.js 不用改
+const PATH_SETTINGS = ['bibFile', 'pdfFolder'];
+
+// 按设置 twig.library 取文献库；options.bibFile 为 bibtex 用的 .bib 文件，options.pdfFolder 为 folder 用的 PDF 文件夹（都是绝对路径）
 // 各文献库模块要用本文件的 citation 等，所以在这里用到时才加载，避免互相引用
 function open(kind, options = {}) {
   if (kind === 'bibtex') return require('./bibtex.js').open(options.bibFile);
+  if (kind === 'folder') return require('./folder.js').open(options.pdfFolder);
   return require('./zotero.js');
 }
 
@@ -48,7 +54,8 @@ function label(p) { return p.authors + (p.year ? ' (' + p.year + ')' : ''); }
 // 生成不重名的 Twig 文件名，如 Morrison等2009_twig.md；同名时依次加 b、c…（Morrison等2015b_twig.md）
 // p 为空（从 PDF 新建或空白模板）时用默认名“作者年份”
 function fileName(p, folder) {
-  const base = p ? p.authors.replace(/[\\/:*?"<>|\s]+/g, '') + p.year : '作者年份'; // 去掉空格和文件名非法字符
+  // 去掉空格和文件名非法字符；PDF 文件夹的论文以文件名作“作者”，可能很长，截短
+  const base = p ? (p.authors.replace(/[\\/:*?"<>|\s]+/g, '') + p.year).slice(0, 40) : '作者年份';
   let name = base + '_twig.md';
   if (!folder || !fs.existsSync(path.join(folder, name))) return name;            // 根目录还没有同名文件，直接用
   for (const suffix of 'bcdefghijklmnopqrstuvwxyz') {                              // 同名时从 b 起顺延字母后缀
@@ -71,8 +78,10 @@ function setKey(text, field, key) {
 }
 
 // 把论文信息填进模板：标题、一级标题、引文、pdf（相对 Twig 文件的路径）、文献编号、firstPage
+// 没有引文的（PDF 文件夹）同“从 PDF 新建”，只填 pdf
 // 替换值写成函数：标题里的 $$、$& 等在字符串替换值中是特殊记号，会被改掉
 function fill(template, lib, p, pdf, twigFile) {
+  if (!p.citation) return fillPdf(template, pdf, twigFile);
   return setKey(fillPdf(template, pdf, twigFile), lib.field, p.key)
     .replace(/^title: .*$/m, () => 'title: ' + label(p) + ' Twig')
     .replace(/^# .*$/m, () => '# ' + label(p) + ' Twig')
@@ -117,4 +126,4 @@ function byTitle(list) {
   return list.sort((a, b) => key(a).localeCompare(key(b), 'zh'));
 }
 
-module.exports = { open, citation, firstPage, label, fileName, setKey, fill, fillPdf, pdfPath, explain, samePath, pathKey, byTitle };
+module.exports = { PATH_SETTINGS, open, citation, firstPage, label, fileName, setKey, fill, fillPdf, pdfPath, explain, samePath, pathKey, byTitle };

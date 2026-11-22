@@ -42,7 +42,7 @@ function activate(context) {
     vscode.commands.registerCommand('twig.refresh', refresh),
     vscode.commands.registerCommand('twig.newIdea', newIdea),
     vscode.workspace.onDidChangeConfiguration(e => {
-      if (['twig.library', 'twig.bibFile', 'twig.folder'].some(k => e.affectsConfiguration(k))) refresh();
+      if (['library', 'folder', ...library.PATH_SETTINGS].some(k => e.affectsConfiguration('twig.' + k))) refresh();
     }),
     vscode.workspace.onDidChangeWorkspaceFolders(refresh),
     { dispose: () => index.watcher && index.watcher.dispose() },
@@ -208,18 +208,20 @@ async function exportHtml(uri) {
   vscode.window.showInformationMessage('已导出 ' + path.basename(output) + note);
 }
 
-// 当前文献库，按设置 twig.library 取；用 .bib 文件时，twig.bibFile 写相对路径的按当前工作区解析
+// 当前文献库，按设置 twig.library 取；各文献库用到的路径设置（见 library.js 的 PATH_SETTINGS，如 twig.bibFile）
+// 写相对路径的按当前工作区解析，没开工作区时当作没填
 // 设置不变时返回同一个对象，Twig 索引按它缓存文献编号表，侧栏按它判断是否换了文献库
 let libraryCache = null;
 function currentLibrary() {
   const config = vscode.workspace.getConfiguration('twig');
-  let bibFile = config.get('bibFile');
-  if (bibFile && !path.isAbsolute(bibFile)) {
-    const ws = currentWorkspace();
-    bibFile = ws ? path.join(ws.uri.fsPath, bibFile) : '';
+  const ws = currentWorkspace();
+  const options = {};
+  for (const name of library.PATH_SETTINGS) {
+    const value = config.get(name);
+    options[name] = !value || path.isAbsolute(value) ? value : ws ? path.join(ws.uri.fsPath, value) : '';
   }
-  const sign = config.get('library') + '|' + bibFile;
-  if (!libraryCache || libraryCache.sign !== sign) libraryCache = { sign, lib: library.open(config.get('library'), { bibFile }) };
+  const sign = config.get('library') + '|' + JSON.stringify(options);
+  if (!libraryCache || libraryCache.sign !== sign) libraryCache = { sign, lib: library.open(config.get('library'), options) };
   return libraryCache.lib;
 }
 

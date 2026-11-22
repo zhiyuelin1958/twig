@@ -3,7 +3,7 @@
   "displayName": "Twig 问枝 — Paper Reading Tree",
   "description": "读论文时把主线与追问画成树状图，点节点看知识卡片，点出处跳到原文对应页；由论文想到的点子与 AI 讨论查证，整理成灵感笔记。配套的 AI 书写规则让 Claude Code、Codex、Gemini、Copilot 边讲边记、处处标出处，读完出题检验。",
   "publisher": "linyuze",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "license": "MIT",
   "engines": {
     "vscode": "^1.90.0"
@@ -183,8 +183,8 @@
         },
         "twig.library": {
           "type": "string",
-          "enum": ["zotero", "bibtex"],
-          "enumDescriptions": ["Zotero（需要 Zotero 7 以上开着，并开放本地接口）", "一个 .bib 文件（JabRef 维护的，或 Zotero、EndNote 等导出的），在 twig.bibFile 填路径"],
+          "enum": ["zotero", "bibtex", "folder"],
+          "enumDescriptions": ["Zotero（需要 Zotero 7 以上开着，并开放本地接口）", "一个 .bib 文件（JabRef 维护的，或 Zotero、EndNote 等导出的），在 twig.bibFile 填路径", "不用文献软件：放论文 PDF 的文件夹，子文件夹即分类，在 twig.pdfFolder 填路径"],
           "default": "zotero",
           "description": "侧栏和新建 Twig 时用哪个文献库。"
         },
@@ -192,6 +192,11 @@
           "type": "string",
           "default": "",
           "description": "twig.library 为 bibtex 时用的 .bib 文件；相对路径按当前工作区解析。分类取 JabRef 的分组，PDF 取条目的 file 字段。"
+        },
+        "twig.pdfFolder": {
+          "type": "string",
+          "default": "论文",
+          "description": "twig.library 为 folder 时放论文 PDF 的文件夹；相对路径按当前工作区解析，默认为工作区下的 论文。其下各级子文件夹即分类。"
         }
       }
     }
