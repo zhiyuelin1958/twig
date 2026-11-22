@@ -1,5 +1,5 @@
-// Twig VSCode 扩展：预览 *_twig.md 与灵感笔记 *_idea.md、导出 HTML、新建（可从文献库取文献信息）、新建灵感笔记、
-// Twig 索引（查重和侧栏标记共用）、把 AI 书写规则装成各家 AI 的 skill；侧栏视图见 sidebar.js
+// Twig VSCode 扩展：预览 *_twig.md 与灵感笔记 *_idea.md、导出 HTML、从文献库的论文新建 Twig 和灵感笔记、
+// 追问图和灵感笔记两份索引（查重和侧栏标记共用）、把 AI 书写规则装成各家 AI 的 skill；侧栏视图见 sidebar.js
 const vscode = require('vscode');
 const fs = require('fs');
 const os = require('os');
@@ -12,31 +12,30 @@ const SKILL_SOURCE = path.join(__dirname, 'skill');
 // 各家 AI 读取个人 skill 的目录。Copilot 也读 ~/.claude/skills，所以不再单独装。与 uninstall.js 中的 AI_HOMES 相同
 const AI_HOMES = { 'Claude Code': '.claude', 'Codex': '.codex', 'Gemini': '.gemini' };
 const panels = new Map();   // 源文件 → 预览面板
-const ideaCreated = new vscode.EventEmitter();     // 新建了灵感笔记，侧栏的灵感笔记视图随之重画
 // 工作区下的默认文件夹：追问图和灵感笔记各一个；0.5.0 以前追问图的文件夹叫 Twig阅读整理，见 renameOldFolder
 const TWIG_DIR = 'Twig追问整理', OLD_TWIG_DIR = 'Twig阅读整理', IDEA_DIR = 'Twig灵感笔记';
 
 function activate(context) {
   setupSkill(context);
-  buildIndex();
+  twigs.build();
+  ideas.build();
   renameOldFolder(context);                        // 改了名会重新扫描
 
   const side = sidebar.create(context, {
     library: currentLibrary,
-    twigKeys,
-    onIndexChange: index.changed.event,
+    twigKeys: lib => twigs.keyMap(lib),
+    ideaKeys: lib => ideas.keyMap(lib),
+    onIndexChange: indexChanged.event,
     newTwig: item => createTwig(currentLibrary(), item),
     openTwig: file => openTwig(file),
+    openIdeas,
     preview: file => preview(vscode.Uri.file(file)),
     exportHtml: file => exportHtml(vscode.Uri.file(file)),
     openPdf: openPaperPdf,
-    newIdea: newIdeaFrom,
-    ideaRoot,
-    newIdeaIn: dir => newIdea(null, dir),
-    onIdeaCreate: ideaCreated.event
+    newIdea
   });
-  // 刷新，以及换了文献库或 Twig 文件夹时：侧栏重新向文献库取，Twig 索引重新扫描
-  const refresh = () => { watchLibrary(side.refresh); side.refresh(); side.ideas(); return buildIndex(); };
+  // 刷新，以及换了文献库或 Twig 文件夹时：侧栏重新向文献库取，两份索引重新扫描
+  const refresh = () => { watchLibrary(side.refresh); side.refresh(); return Promise.all([twigs.build(), ideas.build()]); };
   watchLibrary(side.refresh);
 
   let timer;
@@ -49,13 +48,13 @@ function activate(context) {
     vscode.commands.registerCommand('twig.refresh', refresh),
     // 只列 Twig 自己的设置
     vscode.commands.registerCommand('twig.openSettings', () => vscode.commands.executeCommand('workbench.action.openSettings', '@ext:' + context.extension.id)),
-    vscode.commands.registerCommand('twig.newIdea', () => newIdea()),   // 菜单会传入别的参数，不往下传
+    vscode.commands.registerCommand('twig.newIdea', () => newIdea()),   // 先在搜索框选论文；菜单会传入别的参数，不往下传
     vscode.workspace.onDidChangeConfiguration(e => {
       if (['library', 'folder', ...library.PATH_SETTINGS].some(k => e.affectsConfiguration('twig.' + k))) refresh();
-      if (e.affectsConfiguration('twig.ideaFolder')) side.ideas();
+      if (e.affectsConfiguration('twig.ideaFolder')) ideas.build();
     }),
     vscode.workspace.onDidChangeWorkspaceFolders(refresh),
-    { dispose: () => { if (index.watcher) index.watcher.dispose(); if (libraryWatch && libraryWatch.watcher) libraryWatch.watcher.dispose(); } },
+    { dispose: () => { twigs.dispose(); ideas.dispose(); if (libraryWatch && libraryWatch.watcher) libraryWatch.watcher.dispose(); } },
     // 手动安装同时打开设置，之后扩展升级时规则跟着更新
     vscode.commands.registerCommand('twig.installSkill', async () => {
       await vscode.workspace.getConfiguration('twig').update('installSkill', true, vscode.ConfigurationTarget.Global);
@@ -217,7 +216,7 @@ async function openPaperPdf(paper, twig) {
 // 一篇论文的本机 PDF：已有 Twig 的取它元信息 pdf 指向的那个；否则向文献库取，多个时让用户选（quiet 时取第一个）
 // 取不到时返回空，quiet 时不提示
 async function paperPdf(paper, twig, quiet) {
-  const entry = twig && index.files.get(twig);
+  const entry = twig && twigs.files.get(twig);
   if (entry && entry.pdf && fs.existsSync(entry.pdf)) return entry.pdf;
   const lib = currentLibrary();
   let list;
@@ -228,15 +227,6 @@ async function paperPdf(paper, twig, quiet) {
     return '';
   }
   return quiet ? list[0].file : (await choosePdfOf(list)) || '';
-}
-
-// 侧栏论文右键菜单的“从这篇新建灵感笔记”：起因指向它的 Twig，没有 Twig 时指向它的 PDF
-async function newIdeaFrom(paper, twig) {
-  if (twig) {
-    const entry = index.files.get(twig);
-    return newIdea({ name: (entry && entry.meta.title) || path.basename(twig, '.md'), file: twig });
-  }
-  return newIdea({ name: library.label(paper), file: await paperPdf(paper, null, true) });
 }
 
 async function exportHtml(uri) {
@@ -373,8 +363,8 @@ async function createTwig(lib, item) {
   // 第三步：填充模板、写入文件并打开编辑器和预览
   const text = library.fill(fs.readFileSync(path.join(SKILL_SOURCE, '模板.md'), 'utf8'), lib, item, pdf, target.fsPath);
   fs.writeFileSync(target.fsPath, text);
-  if (!existed) await buildIndex();                // 根目录刚建好，重新扫描，文件监视才能盯住它
-  else indexFile(target.fsPath);                   // 不等文件监视，侧栏标记立即刷新
+  if (!existed) await twigs.build();               // 根目录刚建好，重新扫描，文件监视才能盯住它
+  else twigs.add(target.fsPath);                   // 不等文件监视，侧栏标记立即刷新
   await openTwig(target.fsPath);
 }
 
@@ -384,23 +374,23 @@ function libraryError(lib, e) {
   vscode.window.showWarningMessage(h.label + '：' + h.detail);
 }
 
-// 打开 Twig 文件和它的预览
+// 打开 Twig 文件或灵感笔记，以及它的预览
 async function openTwig(file) {
   const uri = vscode.Uri.file(file);
   await vscode.window.showTextDocument(uri);
   preview(uri);
 }
 
-// 查找同一篇论文已有的 Twig 文件（查 Twig 索引，根目录含旧子文件夹），找到返回绝对路径，否则返回 null
+// 查找同一篇论文已有的 Twig 文件（查追问图索引，根目录含旧子文件夹），找到返回绝对路径，否则返回 null
 // 先比对文献编号（zotero / citekey；没写编号的旧文件由文献库按 pdf 推出），再比对 pdf 路径
 // 已写了另一篇文献编号的文件不参与 pdf 比对
 async function findExistingTwig(root, lib, item, pdfs) {
-  if (!index.root || !library.samePath(index.root, root)) await buildIndex(root);   // 没开工作区时根目录随文献库变，按这次的重新扫描
-  const hit = (await twigKeys(lib)).get(item.key);
-  if (hit) return hit;
+  if (!twigs.root || !library.samePath(twigs.root, root)) await twigs.build(root);   // 没开工作区时根目录随文献库变，按这次的重新扫描
+  const hit = (await twigs.keyMap(lib)).get(item.key);
+  if (hit) return hit[0];
   for (const p of pdfs) {
-    const file = index.byPdf.get(library.pathKey(p));
-    if (file && !(lib.field && index.files.get(file).meta[lib.field])) return file;
+    const file = (twigs.byPdf.get(library.pathKey(p)) || []).find(f => !(lib.field && twigs.files.get(f).meta[lib.field]));
+    if (file) return file;
   }
   return null;
 }
@@ -411,90 +401,109 @@ async function openExistingTwig(file, root) {
   vscode.window.showInformationMessage('这篇论文已有 Twig，已打开：' + path.relative(root, file));
 }
 
-// ---------- Twig 索引 ----------
+// ---------- 索引 ----------
 
-// 根目录（含旧的子文件夹）里全部 Twig 文件的元信息，建成“文献编号 → Twig 文件”“PDF 路径 → Twig 文件”两张表，
-// 新建时的查重、搜索框和侧栏的“已有 Twig”标记共用。开工作区时扫描一次，之后由文件监视跟着增删改
-// 文献编号表按当前文献库算，用到时才算并缓存：没写编号的旧文件要问文献库（见各文献库的 paperKey）
-const index = {
-  root: null,                                      // 扫描的根目录
-  files: new Map(),                                // Twig 文件 → { meta, pdf }，meta 为元信息各项，pdf 为绝对路径或空
-  byPdf: new Map(),                                // PDF 路径（library.pathKey）→ Twig 文件
-  keys: null,                                      // 文献编号表的缓存 { lib, promise → Map(文献编号 → Twig 文件) }
-  watcher: null,
-  changed: new vscode.EventEmitter()               // 有增删改时通知侧栏（停顿 0.3 秒后通知一次）
-};
-let indexTimer;
-
-// 扫描根目录，建立索引并监视其中的 Twig 文件；不给 root 时取 twigRoot，取不到时索引为空
-async function buildIndex(root) {
-  if (root === undefined) root = await twigRoot(currentLibrary(), '');
-  if (index.watcher) index.watcher.dispose();
-  index.root = root;
-  index.files.clear();
-  index.watcher = null;
-  if (root && fs.existsSync(root)) {
-    for (const f of fs.readdirSync(root, { recursive: true })) if (tree.isTwig(f)) readTwig(path.join(root, f));
-    const w = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(vscode.Uri.file(root), '**/*_twig.md'));
-    w.onDidCreate(uri => indexFile(uri.fsPath));
-    w.onDidChange(uri => indexFile(uri.fsPath));
-    w.onDidDelete(dropFile);
-    index.watcher = w;
+// 一份索引：根目录（含子文件夹）里一种文件（追问图或灵感笔记）的元信息，建成“文献编号 → 文件”“PDF 路径 → 文件”两张表，
+// 表的值都是文件列表（追问图一篇一个，灵感笔记一篇可以有多条）。新建时的查重、搜索框和侧栏的标记共用
+// 开工作区时扫描一次，之后由文件监视跟着增删改；文献编号表按当前文献库算，用到时才算并缓存：没写编号的旧文件要问文献库（见各文献库的 paperKey）
+class Index {
+  // test(file) 是不是这种文件；glob 文件监视的模式；home() 取根目录（可以是异步的），取不到时为空
+  constructor(test, glob, home) {
+    this.test = test;
+    this.glob = glob;
+    this.home = home;
+    this.root = null;                              // 扫描的根目录
+    this.files = new Map();                        // 文件 → { meta, pdf }，meta 为元信息各项，pdf 为绝对路径或空
+    this.byPdf = new Map();                        // PDF 路径（library.pathKey）→ [文件]
+    this.keys = null;                              // 文献编号表的缓存 { lib, promise → Map(文献编号 → [文件]) }
+    this.watcher = null;
+    this.timer = null;
   }
-  indexChanged(true);
+
+  // 扫描根目录，建立索引并监视其中这种文件；不给 root 时取 home()，取不到时索引为空
+  async build(root) {
+    if (root === undefined) root = await this.home();
+    this.dispose();
+    this.root = root;
+    this.files.clear();
+    if (root && fs.existsSync(root)) {
+      for (const f of fs.readdirSync(root, { recursive: true })) if (this.test(f)) this.read(path.join(root, f));
+      const w = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(vscode.Uri.file(root), this.glob));
+      w.onDidCreate(uri => this.add(uri.fsPath));
+      w.onDidChange(uri => this.add(uri.fsPath));
+      w.onDidDelete(() => this.drop());
+      this.watcher = w;
+    }
+    this.changed();
+  }
+
+  dispose() {
+    if (this.watcher) this.watcher.dispose();
+    this.watcher = null;
+  }
+
+  // 读一个文件开头的元信息进索引，正文不读（改正文不会让索引变）；读不了（刚被删、正在写）时从索引去掉。返回是否变了
+  read(file) {
+    let text;
+    try { text = fs.readFileSync(file, 'utf8').replace(/\r\n/g, '\n'); } catch (e) { return this.files.delete(file); }
+    const end = text.startsWith('---') ? text.indexOf('\n---', 3) : -1;
+    const meta = tree.parse(end > 0 ? text.slice(0, end + 4) : '');
+    const fields = Object.fromEntries(Object.entries(meta).filter(([, v]) => typeof v === 'string'));
+    const entry = { meta: fields, pdf: fields.pdf ? path.resolve(path.dirname(file), fields.pdf) : '' };
+    const old = this.files.get(file);
+    this.files.set(file, entry);
+    return !old || JSON.stringify(old) !== JSON.stringify(entry);
+  }
+
+  // 文件监视和新建后调用：只有元信息变了才重算两张表
+  add(file) { if (this.read(file)) this.changed(); }
+
+  // 删掉文件或整个文件夹时调用（文件夹删除时监视器可能只报文件夹本身）：去掉索引里已不存在的文件
+  drop() {
+    let changed = false;
+    for (const file of [...this.files.keys()]) if (!fs.existsSync(file)) changed = this.files.delete(file) || changed;
+    if (changed) this.changed();
+  }
+
+  // 索引变了：重建 PDF 表，清掉文献编号表的缓存，通知侧栏（停顿 0.3 秒后通知一次）
+  changed() {
+    this.byPdf = new Map();
+    for (const [file, e] of this.files) if (e.pdf) push(this.byPdf, library.pathKey(e.pdf), file);
+    this.keys = null;
+    clearTimeout(this.timer);
+    this.timer = setTimeout(() => indexChanged.fire(), 300);
+  }
+
+  // 当前文献库下的“文献编号 → [文件]”表，同一篇的文件按文件名排：元信息写了编号的直接用，没写的由文献库按 pdf 推出
+  // 文献库连不上时推不出的先跳过，表不缓存，下次用到再算
+  keyMap(lib) {
+    if (this.keys && this.keys.lib === lib) return this.keys.promise;
+    const entry = { lib };
+    entry.promise = (async () => {
+      const map = new Map();
+      let complete = true;
+      await Promise.all([...this.files].map(async ([file, e]) => {
+        let key = e.meta[lib.field];
+        if (!key) try { key = await lib.paperKey(e.meta, file); } catch (err) { complete = false; }
+        if (key) push(map, key, file);
+      }));
+      for (const list of map.values()) list.sort();
+      if (!complete && this.keys === entry) this.keys = null;
+      return map;
+    })();
+    this.keys = entry;
+    return entry.promise;
+  }
 }
 
-// 读一个 Twig 文件的元信息进索引；读不了（刚被删、正在写）时从索引去掉。返回编号相关的几项是否变了
-function readTwig(file) {
-  let meta;
-  try { meta = tree.parse(fs.readFileSync(file, 'utf8'), file); } catch (e) { return dropEntry(file); }
-  const fields = Object.fromEntries(Object.entries(meta).filter(([, v]) => typeof v === 'string'));
-  const entry = { meta: fields, pdf: fields.pdf ? path.resolve(path.dirname(file), fields.pdf) : '' };
-  const old = index.files.get(file);
-  index.files.set(file, entry);
-  return !old || JSON.stringify(old) !== JSON.stringify(entry);
+function push(map, key, value) {
+  if (map.has(key)) map.get(key).push(value);
+  else map.set(key, [value]);
 }
 
-function dropEntry(file) { return index.files.delete(file); }
-
-// 文件监视和新建后调用：只有元信息变了才重算两张表
-function indexFile(file) { if (readTwig(file)) indexChanged(true); }
-
-// 删掉文件或整个文件夹时调用（文件夹删除时监视器可能只报文件夹本身）：去掉索引里已不存在的文件
-function dropFile() {
-  let changed = false;
-  for (const file of [...index.files.keys()]) if (!fs.existsSync(file)) changed = dropEntry(file) || changed;
-  if (changed) indexChanged(true);
-}
-
-// 索引变了：重建 PDF 表，清掉文献编号表的缓存，通知侧栏
-function indexChanged(keysChanged) {
-  index.byPdf = new Map();
-  for (const [file, e] of index.files) if (e.pdf && !index.byPdf.has(library.pathKey(e.pdf))) index.byPdf.set(library.pathKey(e.pdf), file);
-  if (keysChanged) index.keys = null;
-  clearTimeout(indexTimer);
-  indexTimer = setTimeout(() => index.changed.fire(), 300);
-}
-
-// 当前文献库下的“文献编号 → Twig 文件”表：元信息写了编号的直接用，没写的由文献库按 pdf 推出
-// 文献库连不上时推不出的先跳过，表不缓存，下次用到再算
-function twigKeys(lib) {
-  if (index.keys && index.keys.lib === lib) return index.keys.promise;
-  const entry = { lib };
-  entry.promise = (async () => {
-    const map = new Map();
-    let complete = true;
-    await Promise.all([...index.files].map(async ([file, e]) => {
-      let key = e.meta[lib.field];
-      if (!key) try { key = await lib.paperKey(e.meta, file); } catch (err) { complete = false; }
-      if (key && !map.has(key)) map.set(key, file);
-    }));
-    if (!complete && index.keys === entry) index.keys = null;
-    return map;
-  })();
-  index.keys = entry;
-  return entry.promise;
-}
+const indexChanged = new vscode.EventEmitter();    // 两份索引有增删改时通知侧栏重画标记
+const twigs = new Index(tree.isTwig, '**/*_twig.md', () => twigRoot(currentLibrary(), ''));   // 追问图，根目录见 twigRoot
+const ideas = new Index(tree.isIdea, '**/*_idea.md', () => ideaRoot());                       // 灵感笔记，根目录见 ideaRoot
 
 // Twig 文件放在哪：恒返回根目录（见 twigRoot）；取不到根目录时（没开工作区又推不出文献库位置）用当前文件夹
 async function twigFolder(lib, pdf) {
@@ -545,9 +554,9 @@ async function renameOldFolder(context) {
     if (!await vscode.workspace.applyEdit(edit)) { vscode.window.showWarningMessage('改名失败：' + old); continue; }
     for (const [key, panel] of panels) if (vscode.Uri.parse(key).fsPath.startsWith(old + path.sep)) panel.dispose();
     const moved = f => f.startsWith(old + path.sep) ? now + f.slice(old.length) : f;
-    const ideas = path.join(ws.uri.fsPath, IDEA_DIR);
-    fixLinks(fs.existsSync(ideas) ? [ideas] : [], moved);
-    buildIndex();                                  // Twig 文件换了位置，重新扫描
+    const ideaDir = path.join(ws.uri.fsPath, IDEA_DIR);
+    fixLinks(fs.existsSync(ideaDir) ? [ideaDir] : [], moved);
+    twigs.build();                                 // Twig 文件换了位置，重新扫描
   }
 }
 
@@ -564,51 +573,60 @@ function fixLinks(dirs, moved) {
   }
 }
 
-// 新建灵感笔记：在灵感笔记根目录下选一个主题文件夹（或新建），填简题，从 idea-template.md 生成 <编号>_<简题>_idea.md
-// “起因”里放一个指回来源的链接，AI 再补具体节点。来源：从侧栏的论文新建时为 source { name, file }（那篇的 Twig，没有时为 PDF；
-// 没有 file 时只写名字）；其他时候当前编辑器开着追问图就用它。dir：从灵感笔记视图的主题行新建时给出，不再选主题
-async function newIdea(source, dir) {
+// ---------- 灵感笔记 ----------
+
+// 新建灵感笔记：一篇论文可以有多条，平铺在灵感笔记根目录（见 ideaRoot），文件名为 作者年份_简题_idea.md（见 library.fileName）
+// 从侧栏论文的右键菜单新建时给出 paper 和它的 Twig 文件 twig（没有时为空）；从命令面板新建时先在搜索框里选论文
+// 元信息填标题、pdf 和文献编号（与 Twig 相同，侧栏靠后两项认出它属于哪篇）；“起因”链接回来源：有 Twig 时指向 Twig，没有时指向 PDF，AI 再补具体节点
+async function newIdea(paper, twig) {
   const root = ideaRoot();
   if (!root) { vscode.window.showWarningMessage('先打开一个工作区，或在设置里填 twig.ideaFolder'); return; }
-  if (!dir) {
-    const topics = fs.existsSync(root)
-      ? fs.readdirSync(root, { withFileTypes: true }).filter(d => d.isDirectory() && !d.name.startsWith('.')).map(d => d.name) : [];
-    const chosen = await vscode.window.showQuickPick([
-      ...topics.map(t => ({ label: '$(folder) ' + t, dir: path.join(root, t) })),
-      { label: '$(new-folder) 新建主题文件夹…', create: true },
-      { label: '$(root-folder) 直接放在 ' + path.basename(root), dir: root }
-    ], { placeHolder: '灵感笔记放在哪个主题下' });
-    if (!chosen) return;
-    dir = chosen.dir;
-    if (chosen.create) {
-      const name = await vscode.window.showInputBox({ prompt: '主题文件夹名', validateInput: v => /[\\/:*?"<>|]/.test(v) ? '不能含 \\ / : * ? " < > |' : '' });
-      if (!name || !name.trim()) return;
-      dir = path.join(root, name.trim());
-    }
+  const lib = currentLibrary();
+  if (!paper) {
+    paper = await pickPaper(lib);
+    if (!paper) return;
+    twig = ((await twigs.keyMap(lib)).get(paper.key) || [])[0];
   }
-  const title = await vscode.window.showInputBox({ prompt: '简题：这条灵感想做什么，如“按物质层建立云滴谱方程”' });
-  if (!title || !title.trim()) return;
-  fs.mkdirSync(dir, { recursive: true });
-  const number = String(fs.readdirSync(dir).filter(f => tree.isIdea(f)).length + 1).padStart(2, '0');   // 编号按已有文件顺延
-  const file = path.join(dir, number + '_' + title.trim().replace(/[\\/:*?"<>|\s]+/g, '') + '_idea.md');
-  if (fs.existsSync(file)) { vscode.window.showWarningMessage('已有同名文件：' + file); return; }
+  let topic = await vscode.window.showInputBox({
+    title: '新建灵感笔记 · ' + library.label(paper),
+    prompt: '简题：这条灵感想做什么，如“按物质层建立云滴谱方程”'
+  });
+  topic = topic && topic.trim();
+  if (!topic) return;
+  const pdf = await paperPdf(paper, twig, true);
+  const existed = fs.existsSync(root);
+  if (!existed) fs.mkdirSync(root, { recursive: true });
+  const file = path.join(root, library.fileName(paper, root, '_' + topic.replace(/[\/:*?"<>|\s]+/g, '') + '_idea.md'));
 
-  let text = fs.readFileSync(path.join(SKILL_SOURCE, 'idea-template.md'), 'utf8').replace(/^# .*$/m, '# ' + title.trim());
-  let from = source && source.name ? source : null;
-  if (!from) {
-    const editor = vscode.window.activeTextEditor;
-    const file = editor && editor.document.uri.fsPath;
-    if (file && tree.isTwig(file)) from = { name: tree.parse(editor.document.getText(), file).title || path.basename(file, '.md'), file };
-  }
-  if (from) {
-    const rel = from.file && path.relative(dir, from.file).split(path.sep).join('/');
-    const link = rel ? '[' + from.name + '](' + (/[\s()<>]/.test(rel) ? '<' + rel + '>' : rel) + ')' : from.name;
-    text = text.replace(/^(起因：).*$/m, (_, key) => key + '读 ' + link + ' 时想到。');
-  }
+  // 替换值写成函数，免得简题里的 $& 等被当作特殊记号（见 library.fill）
+  let text = library.fill(fs.readFileSync(path.join(SKILL_SOURCE, 'idea-template.md'), 'utf8'), lib, paper, pdf, file)
+    .replace(/^title:.*$/m, () => 'title: ' + library.label(paper) + ' · ' + topic)
+    .replace(/^# .*$/m, () => '# ' + topic);
+  const source = twig
+    ? { name: (twigs.files.get(twig) && twigs.files.get(twig).meta.title) || path.basename(twig, '.md'), file: twig }
+    : { name: library.label(paper), file: pdf };
+  const rel = source.file && path.relative(root, source.file).split(path.sep).join('/');
+  const link = rel ? '[' + source.name + '](' + (/[\s()<>]/.test(rel) ? '<' + rel + '>' : rel) + ')' : source.name;
+  text = text.replace(/^(起因：).*$/m, (_, key) => key + '读 ' + link + ' 时想到。');
   fs.writeFileSync(file, text);
-  ideaCreated.fire(file);
-  await vscode.window.showTextDocument(vscode.Uri.file(file));
-  preview(vscode.Uri.file(file));
+  if (!existed) await ideas.build();               // 根目录刚建好，重新扫描，文件监视才能盯住它
+  else ideas.add(file);                            // 不等文件监视，侧栏标记立即刷新
+  await openTwig(file);
+}
+
+// 打开一篇论文的灵感笔记（侧栏论文的单击和右键菜单）：只有一条时直接打开，多条时列出标题让用户选
+async function openIdeas(files) {
+  if (!files || !files.length) return;
+  let file = files[0];
+  if (files.length > 1) {
+    const chosen = await vscode.window.showQuickPick(files.map(f => {
+      const entry = ideas.files.get(f);
+      return { label: (entry && entry.meta.title) || path.basename(f, '_idea.md'), description: path.basename(f), file: f };
+    }), { placeHolder: '这篇论文有 ' + files.length + ' 条灵感笔记，打开哪一条' });
+    if (!chosen) return;
+    file = chosen.file;
+  }
+  await openTwig(file);
 }
 
 // 选论文的搜索框（命令面板和侧栏标题栏里的“搜索文献”），两种用法：
@@ -618,8 +636,8 @@ async function newIdea(source, dir) {
 // 每篇论文一行：作者 (年份) 在前，标题在后，已有 Twig 的标出来；选中返回该论文，取消返回 undefined
 function pickPaper(lib) {
   const separator = label => ({ label, kind: vscode.QuickPickItemKind.Separator });
-  // 论文行；twigs 为 Twig 索引的文献编号表
-  const paper = twigs => p => twigs.has(p.key)
+  // 论文行；keys 为追问图索引的文献编号表
+  const paper = keys => p => keys.has(p.key)
     ? { label: '$(' + sidebar.TWIG_ICON + ') ' + library.label(p), description: '已有 Twig · ' + p.title, alwaysShow: true, item: p }
     : { label: library.label(p), description: p.title, alwaysShow: true, item: p };
   // 读不了文献库时显示在列表顶部的说明（文字见各文献库的 help），选中它不做任何事
@@ -649,10 +667,10 @@ function pickPaper(lib) {
     const here = trail[trail.length - 1];
     box.title = here ? trail.map(f => f.name).join(' › ') : lib.name + ' 文献库';
     show(async () => {
-      const twigs = await twigKeys(lib);
+      const keys = await twigs.keyMap(lib);
       if (here && here.view) {
         const list = await lib.viewPapers(here.key);
-        return [{ label: '$(arrow-left) 返回上一级', alwaysShow: true, back: true }, ...(list.length ? [separator('论文'), ...list.map(paper(twigs))] : [])];
+        return [{ label: '$(arrow-left) 返回上一级', alwaysShow: true, back: true }, ...(list.length ? [separator('论文'), ...list.map(paper(keys))] : [])];
       }
       const folders = (await lib.folders(here && here.key)).map(f => ({
         label: '$(' + sidebar.CATEGORY_ICON + ') ' + f.name,
@@ -665,7 +683,7 @@ function pickPaper(lib) {
         ...(here ? [{ label: '$(arrow-left) 返回上一级', alwaysShow: true, back: true }] : []),
         ...folders,
         ...views,
-        ...(list.length ? [separator(here ? '论文' : '最近改动'), ...list.map(paper(twigs))] : [])
+        ...(list.length ? [separator(here ? '论文' : '最近改动'), ...list.map(paper(keys))] : [])
       ];
     });
   }
@@ -675,7 +693,7 @@ function pickPaper(lib) {
     timer = setTimeout(() => {
       if (!q.trim()) return browse();
       box.title = '搜索整个文献库';
-      show(async () => (await lib.search(q)).map(paper(await twigKeys(lib))));
+      show(async () => (await lib.search(q)).map(paper(await twigs.keyMap(lib))));
     }, 300);
   });
   browse();

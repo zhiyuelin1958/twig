@@ -16,7 +16,7 @@ Twig 靠 AI 边读边改 `*_twig.md`，所以文件放在哪里会影响使用�
 科研/                  ← 用 VSCode 打开这个文件夹
 ├── Zotero/            ← Zotero 数据文件夹，PDF 在其中的 storage/
 ├── Twig追问整理/      ← Twig 文件，平铺
-└── Twig灵感笔记/      ← 灵感笔记，按主题建子文件夹
+└── Twig灵感笔记/      ← 灵感笔记，平铺
 ```
 
 - **Zotero 数据文件夹移进来**：Zotero 不会替你搬旧数据。先关掉 Zotero，把整个数据文件夹（含 `zotero.sqlite` 和 `storage/`）移进科研文件夹；再打开 Zotero，在 设置 → 高级 → 文件和文件夹 把数据存储位置改成自定义，指向新位置。重启后确认设置还在。

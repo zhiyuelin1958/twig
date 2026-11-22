@@ -1,4 +1,7 @@
 ---
+title: 作者 (年份) · 简题
+pdf: ../论文.pdf
+zotero:
 refs:
 ---
 

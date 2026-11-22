@@ -70,18 +70,19 @@ function firstPage(pages) {
 // 作者简称与年份，如 Morrison 等 (2009)；没有年份（如网页）时只写作者
 function label(p) { return p.authors + (p.year ? ' (' + p.year + ')' : ''); }
 
-// 生成不重名的 Twig 文件名，如 Morrison等2009_twig.md；同名时依次加 b、c…（Morrison等2015b_twig.md）
-function fileName(p, folder) {
+// 生成不重名的文件名：作者年份加结尾 tail。Twig 文件 tail 为 _twig.md，如 Morrison等2009_twig.md；
+// 灵感笔记 tail 为 _简题_idea.md，如 Morrison等2005_按物质层建立云滴谱方程_idea.md。同名时作者年份后依次加 b、c…（Morrison等2015b_twig.md）
+function fileName(p, folder, tail = '_twig.md') {
   // 去掉空格和文件名非法字符；PDF 文件夹的论文以文件名作“作者”，可能很长，截短
   const base = (p.authors.replace(/[\\/:*?"<>|\s]+/g, '') + p.year).slice(0, 40);
-  let name = base + '_twig.md';
+  let name = base + tail;
   if (!folder || !fs.existsSync(path.join(folder, name))) return name;            // 根目录还没有同名文件，直接用
   for (const suffix of 'bcdefghijklmnopqrstuvwxyz') {                              // 同名时从 b 起顺延字母后缀
-    name = base + suffix + '_twig.md';
+    name = base + suffix + tail;
     if (!fs.existsSync(path.join(folder, name))) return name;
   }
   for (let i = 2; ; i++) {                                                         // 极端情况用完字母后改用数字后缀
-    name = base + '_' + i + '_twig.md';
+    name = base + '_' + i + tail;
     if (!fs.existsSync(path.join(folder, name))) return name;
   }
 }
@@ -95,8 +96,8 @@ function setKey(text, field, key) {
   return text.replace(/^pdf:.*$/m, pdfLine => pdfLine + '\n' + line);
 }
 
-// 把论文信息填进模板：标题、一级标题、引文、pdf（相对 Twig 文件的路径）、文献编号、firstPage
-// 没有引文的（PDF 文件夹）只填 pdf，引文等由 AI 读 PDF 后填
+// 把论文信息填进模板：标题、一级标题、引文、pdf（相对 Twig 文件的路径）、文献编号、firstPage；模板里没有的项不填
+// Twig 文件和灵感笔记共用（灵感笔记的标题由 extension.js 的 newIdea 另填）。没有引文的（PDF 文件夹）只填 pdf，引文等由 AI 读 PDF 后填
 // 替换值写成函数：标题里的 $$、$& 等在字符串替换值中是特殊记号，会被改掉
 function fill(template, lib, p, pdf, twigFile) {
   if (!p.citation) return fillPdf(template, pdf, twigFile);
