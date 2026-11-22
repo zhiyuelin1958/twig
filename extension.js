@@ -12,6 +12,7 @@ const SKILL_SOURCE = path.join(__dirname, 'skill');
 // 各家 AI 读取个人 skill 的目录。Copilot 也读 ~/.claude/skills，所以不再单独装。与 uninstall.js 中的 AI_HOMES 相同
 const AI_HOMES = { 'Claude Code': '.claude', 'Codex': '.codex', 'Gemini': '.gemini' };
 const panels = new Map();   // 源文件 → 预览面板
+const ideaCreated = new vscode.EventEmitter();     // 新建了灵感笔记，侧栏的灵感笔记视图随之重画
 // 工作区下的默认文件夹：追问图和灵感笔记各一个；0.5.0 以前追问图的文件夹叫 Twig阅读整理，见 renameOldFolder
 const TWIG_DIR = 'Twig追问整理', OLD_TWIG_DIR = 'Twig阅读整理', IDEA_DIR = 'Twig灵感笔记';
 
@@ -29,10 +30,13 @@ function activate(context) {
     preview: file => preview(vscode.Uri.file(file)),
     exportHtml: file => exportHtml(vscode.Uri.file(file)),
     openPdf: openPaperPdf,
-    newIdea: newIdeaFrom
+    newIdea: newIdeaFrom,
+    ideaRoot,
+    newIdeaIn: dir => newIdea(null, dir),
+    onIdeaCreate: ideaCreated.event
   });
   // 刷新，以及换了文献库或 Twig 文件夹时：侧栏重新向文献库取，Twig 索引重新扫描
-  const refresh = () => { watchLibrary(side.refresh); side.refresh(); return buildIndex(); };
+  const refresh = () => { watchLibrary(side.refresh); side.refresh(); side.ideas(); return buildIndex(); };
   watchLibrary(side.refresh);
 
   let timer;
@@ -45,9 +49,10 @@ function activate(context) {
     vscode.commands.registerCommand('twig.refresh', refresh),
     // 只列 Twig 自己的设置
     vscode.commands.registerCommand('twig.openSettings', () => vscode.commands.executeCommand('workbench.action.openSettings', '@ext:' + context.extension.id)),
-    vscode.commands.registerCommand('twig.newIdea', newIdea),
+    vscode.commands.registerCommand('twig.newIdea', () => newIdea()),   // 菜单会传入别的参数，不往下传
     vscode.workspace.onDidChangeConfiguration(e => {
       if (['library', 'folder', ...library.PATH_SETTINGS].some(k => e.affectsConfiguration('twig.' + k))) refresh();
+      if (e.affectsConfiguration('twig.ideaFolder')) side.ideas();
     }),
     vscode.workspace.onDidChangeWorkspaceFolders(refresh),
     { dispose: () => { if (index.watcher) index.watcher.dispose(); if (libraryWatch && libraryWatch.watcher) libraryWatch.watcher.dispose(); } },
@@ -555,23 +560,25 @@ function fixLinks(dirs, moved) {
 
 // 新建灵感笔记：在灵感笔记根目录下选一个主题文件夹（或新建），填简题，从 idea-template.md 生成 <编号>_<简题>_idea.md
 // “起因”里放一个指回来源的链接，AI 再补具体节点。来源：从侧栏的论文新建时为 source { name, file }（那篇的 Twig，没有时为 PDF；
-// 没有 file 时只写名字）；从命令面板新建时，当前编辑器开着追问图就用它
-async function newIdea(source) {
+// 没有 file 时只写名字）；其他时候当前编辑器开着追问图就用它。dir：从灵感笔记视图的主题行新建时给出，不再选主题
+async function newIdea(source, dir) {
   const root = ideaRoot();
   if (!root) { vscode.window.showWarningMessage('先打开一个工作区，或在设置里填 twig.ideaFolder'); return; }
-  const topics = fs.existsSync(root)
-    ? fs.readdirSync(root, { withFileTypes: true }).filter(d => d.isDirectory()).map(d => d.name) : [];
-  const chosen = await vscode.window.showQuickPick([
-    ...topics.map(t => ({ label: '$(folder) ' + t, dir: path.join(root, t) })),
-    { label: '$(new-folder) 新建主题文件夹…', create: true },
-    { label: '$(root-folder) 直接放在 ' + path.basename(root), dir: root }
-  ], { placeHolder: '灵感笔记放在哪个主题下' });
-  if (!chosen) return;
-  let dir = chosen.dir;
-  if (chosen.create) {
-    const name = await vscode.window.showInputBox({ prompt: '主题文件夹名', validateInput: v => /[\\/:*?"<>|]/.test(v) ? '不能含 \\ / : * ? " < > |' : '' });
-    if (!name || !name.trim()) return;
-    dir = path.join(root, name.trim());
+  if (!dir) {
+    const topics = fs.existsSync(root)
+      ? fs.readdirSync(root, { withFileTypes: true }).filter(d => d.isDirectory() && !d.name.startsWith('.')).map(d => d.name) : [];
+    const chosen = await vscode.window.showQuickPick([
+      ...topics.map(t => ({ label: '$(folder) ' + t, dir: path.join(root, t) })),
+      { label: '$(new-folder) 新建主题文件夹…', create: true },
+      { label: '$(root-folder) 直接放在 ' + path.basename(root), dir: root }
+    ], { placeHolder: '灵感笔记放在哪个主题下' });
+    if (!chosen) return;
+    dir = chosen.dir;
+    if (chosen.create) {
+      const name = await vscode.window.showInputBox({ prompt: '主题文件夹名', validateInput: v => /[\\/:*?"<>|]/.test(v) ? '不能含 \\ / : * ? " < > |' : '' });
+      if (!name || !name.trim()) return;
+      dir = path.join(root, name.trim());
+    }
   }
   const title = await vscode.window.showInputBox({ prompt: '简题：这条灵感想做什么，如“按物质层建立云滴谱方程”' });
   if (!title || !title.trim()) return;
@@ -581,7 +588,7 @@ async function newIdea(source) {
   if (fs.existsSync(file)) { vscode.window.showWarningMessage('已有同名文件：' + file); return; }
 
   let text = fs.readFileSync(path.join(SKILL_SOURCE, 'idea-template.md'), 'utf8').replace(/^# .*$/m, '# ' + title.trim());
-  let from = source && source.name ? source : null;   // 从菜单调用时可能传进别的参数
+  let from = source && source.name ? source : null;
   if (!from) {
     const editor = vscode.window.activeTextEditor;
     const file = editor && editor.document.uri.fsPath;
@@ -593,6 +600,7 @@ async function newIdea(source) {
     text = text.replace(/^(起因：).*$/m, (_, key) => key + '读 ' + link + ' 时想到。');
   }
   fs.writeFileSync(file, text);
+  ideaCreated.fire(file);
   await vscode.window.showTextDocument(vscode.Uri.file(file));
   preview(vscode.Uri.file(file));
 }

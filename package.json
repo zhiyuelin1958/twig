@@ -3,7 +3,7 @@
   "displayName": "Twig 问枝 — Paper Reading Tree",
   "description": "读论文时把主线与追问画成树状图，点节点看知识卡片，点出处跳到原文对应页；由论文想到的点子与 AI 讨论查证，整理成灵感笔记。配套的 AI 书写规则让 Claude Code、Codex、Gemini、Copilot 边讲边记、处处标出处，读完出题检验。",
   "publisher": "linyuze",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "license": "MIT",
   "engines": {
     "vscode": "^1.90.0"
@@ -94,6 +94,23 @@
       {
         "command": "twig.newIdea",
         "title": "新建灵感笔记",
+        "category": "Twig",
+        "icon": "$(add)"
+      },
+      {
+        "command": "twig.idea.open",
+        "title": "打开灵感笔记",
+        "category": "Twig"
+      },
+      {
+        "command": "twig.idea.newHere",
+        "title": "在这个主题下新建灵感笔记",
+        "category": "Twig",
+        "icon": "$(add)"
+      },
+      {
+        "command": "twig.idea.exportHtml",
+        "title": "导出 HTML",
         "category": "Twig"
       },
       {
@@ -120,6 +137,10 @@
         {
           "id": "twig.papers",
           "name": "论文"
+        },
+        {
+          "id": "twig.ideas",
+          "name": "灵感笔记"
         }
       ]
     },
@@ -127,6 +148,10 @@
       {
         "view": "twig.papers",
         "contents": "在上面的“分类”里选中一个分类，这里列出其中的论文。"
+      },
+      {
+        "view": "twig.ideas",
+        "contents": "还没有灵感笔记。读论文时想到点子，右键那篇论文选“从这篇新建灵感笔记”，或者：\n[新建灵感笔记](command:twig.newIdea)"
       }
     ],
     "menus": {
@@ -150,6 +175,11 @@
           "command": "twig.openSettings",
           "when": "view == twig.categories",
           "group": "9_settings"
+        },
+        {
+          "command": "twig.newIdea",
+          "when": "view == twig.ideas",
+          "group": "navigation@1"
         }
       ],
       "view/item/context": [
@@ -182,6 +212,21 @@
           "command": "twig.paper.exportHtml",
           "when": "view == twig.papers && viewItem == paper.twig",
           "group": "3_export@1"
+        },
+        {
+          "command": "twig.idea.newHere",
+          "when": "view == twig.ideas && viewItem == topic",
+          "group": "inline"
+        },
+        {
+          "command": "twig.idea.newHere",
+          "when": "view == twig.ideas && viewItem == topic",
+          "group": "1_new@1"
+        },
+        {
+          "command": "twig.idea.exportHtml",
+          "when": "view == twig.ideas && viewItem == idea",
+          "group": "3_export@1"
         }
       ],
       "commandPalette": [
@@ -207,6 +252,18 @@
         },
         {
           "command": "twig.paper.newIdea",
+          "when": "false"
+        },
+        {
+          "command": "twig.idea.open",
+          "when": "false"
+        },
+        {
+          "command": "twig.idea.newHere",
+          "when": "false"
+        },
+        {
+          "command": "twig.idea.exportHtml",
           "when": "false"
         }
       ],
