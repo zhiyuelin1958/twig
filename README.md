@@ -84,6 +84,14 @@ AI 只能顺畅读写 VSCode 工作区（打开的那个文件夹）里的文件
 
 卸载扩展并重启 VSCode 后，书写规则自动删除，只保留 `个人偏好.md`；你的 Twig 文件不受影响。
 
+## 从源码构建
+
+扩展是纯 JavaScript，不用编译，也没有第三方依赖，clone 下来不用 `npm install`。
+
+- **调试**：用 VSCode 打开仓库文件夹，按 F5，在弹出的“扩展开发宿主”窗口里试用。
+- **打包**：装好 Node.js（20 以上），在仓库根目录运行 `npx @vscode/vsce package`，得到 `twig-paper-reading-版本号.vsix`。安装时运行 `code --install-extension twig-paper-reading-版本号.vsix`，或在扩展视图右上角的 … 菜单里选“从 VSIX 安装”；商店里搜不到 Twig 的编辑器（如 Cursor、VSCodium）也这样装。
+- `skill/build.cjs` 不是扩展的构建脚本：它把 `_twig.md`、`_idea.md` 生成独立网页，“导出 HTML”用的就是它。
+
 ## 许可
 
 MIT
